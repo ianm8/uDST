@@ -15,7 +15,6 @@ Here is a block diagram:
 
 ![alt text](https://github.com/ianm8/uDST/blob/main/docs/uDST.png?raw=true)
 
-
 ## Advantages of Direct Sampling
 **The signal path collapses to almost nothing.** The uDST's entire analog chain is a transformer, one MMIC, and an anti-alias filter ahead of the ADC — after that, everything is arithmetic. A Tayloe rig needs a quadrature LO chain (usually a synthesizer plus divide-by-4), the switching detector itself, matched integrator/op-amp stages on both I and Q, and an audio codec. A superhet needs one or more mixers, LO synthesizers, IF amplifier strips, and crystal or roofing filters, all of which must be aligned and gain-distributed. Every analog stage removed is a stage that can't drift, mismatch, intermodulate, or pick up hum.
 
