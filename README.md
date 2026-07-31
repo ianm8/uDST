@@ -11,6 +11,9 @@ A direct sampling SDR QRP transceiver.
  * Noise reduction
  * Noise blanker
 
+## Some Videos
+* [uDST Part 1](https://youtu.be/HgmR2FVoKSU)
+
 Here is a block diagram:
 
 ![alt text](https://github.com/ianm8/uDST/blob/main/docs/uDST.png?raw=true)
