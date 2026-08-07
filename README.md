@@ -12,7 +12,8 @@ A direct sampling SDR QRP transceiver.
  * Noise blanker
 
 ## Some Videos
-* [uDST Part 1](https://youtu.be/HgmR2FVoKSU)
+* [uDST Part 1](https://youtu.be/HgmR2FVoKSU) (Introduction, block diagram)
+* [uDST Part 2](https://youtu.be/xAT3kS7YdZg) (FPGA Simulation, circuit, PCB)
 
 Here is a block diagram:
 
