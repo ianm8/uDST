@@ -10,6 +10,7 @@ A direct sampling SDR QRP transceiver.
  * 30 KHz spectrum display
  * Noise reduction
  * Noise blanker
+ * Notch filter
 
 ## Some Videos
 * [uDST Part 1](https://youtu.be/HgmR2FVoKSU) (Introduction, block diagram)
