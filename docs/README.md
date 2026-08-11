@@ -27,3 +27,18 @@ The uDST has 26dB of analogue gain ahead of the 12b ADC. This consists of an MMI
 **Dither** The 31 dB decimation gain assumed quantization noise decorrelated across the band, which requires the LSBs to be genuinely exercised. With band noise arriving 20-odd dB above the ADC's per-Hz floor, the converter is continuously dithered by the antenna itself, so the processing-gain math holds without any added dither.
 
 26 dB of analog gain buys ~23 dB of sensitivity, costs exactly 26 dB of clip headroom (landing full scale at S9+55), leaves every digital number unchanged, and makes the band — not the converter — the noise floor, which is the whole design goal of a direct-sampling receiver.
+
+# Program Structure
+Note, for improved resolution, take a look at the associated SVG file.
+
+## Cores
+
+![DDC Block Diagram](https://github.com/ianm8/uDST/blob/main/docs/uDST_structure_1_cores.png?raw=true)
+
+## Display
+
+![DDC Block Diagram](https://github.com/ianm8/uDST/blob/main/docs/uDST_structure_2_display.png?raw=true)
+
+## FT8
+
+![DDC Block Diagram](https://github.com/ianm8/uDST/blob/main/docs/uDST_structure_3_ft8.png?raw=true)
