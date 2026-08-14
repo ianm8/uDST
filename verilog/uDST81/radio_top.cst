@@ -1,0 +1,136 @@
+######################### Locations #########################
+# radio_top pin assignment, Brisbane Silicon BRS-100-GW1NR9
+# (GW1NR-LV9QN88PC6/I5). Derived from the board's stock .cst:
+#   pad_clk_27Mhz (pin 52)  = crystal/TCXO input, NOT part of pad_io[1-32]
+#   pad_io[1-32]            = the 32 general-purpose I/O on J5/J6, used
+#                             exactly 1:1 with radio_top's 32 GPIO ports.
+#
+# Each bus (ADC/DAC) is kept entirely within one header (J5 or J6) to avoid
+# splitting a parallel bus across what look like opposite package edges.
+
+# -------- Clock reference (TCXO/crystal -> rPLL) --------
+IO_LOC  "sys_clk"            52;
+
+# -------- ADC (AD9236, D0-D11), J5 --------
+/*
+IO_LOC  "adc_in[0]"          25;   # AD9236 D0  (pin 15)
+IO_LOC  "adc_in[1]"          26;   # AD9236 D1  (pin 16)
+IO_LOC  "adc_in[2]"          27;   # AD9236 D2  (pin 17)
+IO_LOC  "adc_in[3]"          28;   # AD9236 D3  (pin 18)
+IO_LOC  "adc_in[4]"          29;   # AD9236 D4  (pin 19)
+IO_LOC  "adc_in[5]"          30;   # AD9236 D5  (pin 20)
+IO_LOC  "adc_in[6]"          33;   # AD9236 D6  (pin 21)
+IO_LOC  "adc_in[7]"          34;   # AD9236 D7  (pin 22)
+IO_LOC  "adc_in[8]"          35;   # AD9236 D8  (pin 25, after power pins 23/24)
+IO_LOC  "adc_in[9]"          36;   # AD9236 D9  (pin 26)
+IO_LOC  "adc_in[10]"         37;   # AD9236 D10 (pin 27)
+IO_LOC  "adc_in[11]"         38;   # AD9236 D11 (pin 28, MSB)
+*/
+IO_LOC  "adc_in[0]"          38;
+IO_LOC  "adc_in[1]"          37;
+IO_LOC  "adc_in[2]"          36;
+IO_LOC  "adc_in[3]"          35;
+IO_LOC  "adc_in[4]"          34;
+IO_LOC  "adc_in[5]"          33;
+IO_LOC  "adc_in[6]"          30;
+IO_LOC  "adc_in[7]"          29;
+IO_LOC  "adc_in[8]"          28;
+IO_LOC  "adc_in[9]"          27;
+IO_LOC  "adc_in[10]"         26;
+IO_LOC  "adc_in[11]"         25;
+
+# -------- Sample clock to ADC/DAC, J5 --------
+IO_LOC  "clk80"              39;
+
+# -------- SPI tuning-word bus (write-only), J5 --------
+IO_LOC  "spi_tw_sck"         40;
+IO_LOC  "spi_tw_mosi"        41;
+IO_LOC  "spi_tw_cs_n"        42;
+
+# -------- DAC (AD9740, DB9..DB0), J6 --------
+IO_LOC  "dac_out[9]"         77;   # AD9740 pin 1 (MSB)
+IO_LOC  "dac_out[8]"         76;   # AD9740 pin 2
+IO_LOC  "dac_out[7]"         75;   # AD9740 pin 3
+IO_LOC  "dac_out[6]"         74;   # AD9740 pin 4
+IO_LOC  "dac_out[5]"         73;   # AD9740 pin 5
+IO_LOC  "dac_out[4]"         72;   # AD9740 pin 6
+IO_LOC  "dac_out[3]"         71;   # AD9740 pin 7
+IO_LOC  "dac_out[2]"         70;   # AD9740 pin 8
+IO_LOC  "dac_out[1]"         69;   # AD9740 pin 9
+IO_LOC  "dac_out[0]"         68;   # AD9740 pin 10 (LSB)
+
+# -------- Control + SPI IQ bus, J6 --------
+IO_LOC  "tx_rx"              57;
+IO_LOC  "spi_iq_sck"         56;
+IO_LOC  "spi_iq_mosi"        55;
+IO_LOC  "spi_iq_miso"        54;
+IO_LOC  "spi_iq_cs_n"        53;
+IO_LOC  "data_ready"         51;
+
+# -------- Status LEDs (separate 1.8V header), active low --------
+IO_LOC  "leds_n[1]"          16;
+IO_LOC  "leds_n[2]"          15;
+IO_LOC  "leds_n[3]"          14;
+IO_LOC  "leds_n[4]"          13;
+IO_LOC  "leds_n[5]"          11;
+IO_LOC  "leds_n[6]"          10;
+
+
+######################### Configuration #########################
+
+IO_PORT "sys_clk"            IO_TYPE=LVCMOS33  PULL_MODE=UP;
+
+# ADC data bus: actively driven by AD9236 at all times, no pulls needed
+IO_PORT "adc_in[0]"          IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[1]"          IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[2]"          IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[3]"          IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[4]"          IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[5]"          IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[6]"          IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[7]"          IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[8]"          IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[9]"          IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[10]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "adc_in[11]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+
+# Sample clock forwarded to ADC/DAC (FPGA-driven, via ODDR)
+IO_PORT "clk80"              IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+
+# SPI tuning-word bus: sck/mosi don't-care while cs_n is high; cs_n pulled
+# up so it idles deasserted if the Pico side resets or disconnects
+IO_PORT "spi_tw_sck"         IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "spi_tw_mosi"        IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "spi_tw_cs_n"        IO_TYPE=LVCMOS33  PULL_MODE=UP;
+
+# DAC data bus (FPGA-driven)
+IO_PORT "dac_out[0]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+IO_PORT "dac_out[1]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+IO_PORT "dac_out[2]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+IO_PORT "dac_out[3]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+IO_PORT "dac_out[4]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+IO_PORT "dac_out[5]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+IO_PORT "dac_out[6]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+IO_PORT "dac_out[7]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+IO_PORT "dac_out[8]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+IO_PORT "dac_out[9]"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+
+# Control + SPI IQ bus.
+# tx_rx pulled down: if the Pico hasn't driven it yet (e.g. during its own
+# boot), the radio defaults to RX (0) rather than risking an unintended TX.
+IO_PORT "tx_rx"              IO_TYPE=LVCMOS33  PULL_MODE=DOWN;
+IO_PORT "spi_iq_sck"         IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "spi_iq_mosi"        IO_TYPE=LVCMOS33  PULL_MODE=NONE;
+IO_PORT "spi_iq_miso"        IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+IO_PORT "spi_iq_cs_n"        IO_TYPE=LVCMOS33  PULL_MODE=UP;
+IO_PORT "data_ready"         IO_TYPE=LVCMOS33  PULL_MODE=NONE   DRIVE=8;
+
+# Status LEDs: separate 1.8V bank (NOT 3.3V like everything else above).
+# Active low (common anode), so PULL_MODE=UP makes them idle OFF if the
+# FPGA hasn't configured/driven them yet (e.g. mid-reset).
+IO_PORT "leds_n[1]"          IO_TYPE=LVCMOS18  PULL_MODE=UP     DRIVE=8;
+IO_PORT "leds_n[2]"          IO_TYPE=LVCMOS18  PULL_MODE=UP     DRIVE=8;
+IO_PORT "leds_n[3]"          IO_TYPE=LVCMOS18  PULL_MODE=UP     DRIVE=8;
+IO_PORT "leds_n[4]"          IO_TYPE=LVCMOS18  PULL_MODE=UP     DRIVE=8;
+IO_PORT "leds_n[5]"          IO_TYPE=LVCMOS18  PULL_MODE=UP     DRIVE=8;
+IO_PORT "leds_n[6]"          IO_TYPE=LVCMOS18  PULL_MODE=UP     DRIVE=8;
