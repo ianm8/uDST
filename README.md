@@ -15,6 +15,7 @@ A direct sampling SDR QRP transceiver.
 ## Some Videos
 * [uDST Part 1](https://youtu.be/HgmR2FVoKSU) (Introduction, block diagram)
 * [uDST Part 2](https://youtu.be/xAT3kS7YdZg) (FPGA Simulation, circuit, PCB)
+* [uDST Part 3](https://youtu.be/dJraK3VEWkw) (Build part 1)
 
 Here is a block diagram:
 
