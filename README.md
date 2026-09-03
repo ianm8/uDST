@@ -6,7 +6,7 @@ A direct sampling SDR QRP transceiver.
  * CESSB
  * 80m - 10m, nominally 5W
  ** (typically 6W - 10W)
- * 3.5MHz - 30MHz SWL
+ * 0.5MHz - 30MHz SWL (reduced sensitivity below 3MHz)
  * 30 KHz spectrum display
  * Noise reduction
  * Noise blanker
