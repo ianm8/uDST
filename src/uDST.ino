@@ -1,5 +1,5 @@
 /*
- * MBPTRX Version 1.0.250
+ * MBPTRX Version 2.0.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -7,19 +7,11 @@
  *
  * Libraries
  *
- *  https://github.com/Bodmer/TFT_eSPI
+ *  TFT_eSPI2 in TFF_ePSI2 folder (based on https://github.com/Bodmer/TFT_eSPI)
  *
  * Filter Design
  *
  *  https://www.arc.id.au/FilterDesign.html
- *
- * Important:
- *   Copy "User_Setup.h" to  ..\Arduino\libraries\TFT_eSPI whenever the TFT_eSPI library is installed
- *   Important Note, there is a bug in version that requires the following change in TFT_eSPI_RP2040.h:
- *
- *     #define SET_BUS_READ_MODE  // spi_set_format(SPI_X,  8, (spi_cpol_t)0, (spi_cpha_t)0, SPI_MSB_FIRST)
- *
- *   that is, comment out: spi_set_format(SPI_X,  8, (spi_cpol_t)0, (spi_cpha_t)0, SPI_MSB_FIRST)
  *
  * Build:
  *  Pi Pico 2
@@ -42,6 +34,23 @@
  *  0.11.250 improved sensitivity (AGC)
  *  0.12.250 notch filter
  *  1.0.250 move DSP to core 1
+ *  1.1.250 AM s-meter adjust
+ *  1.2.250 s-meter colour
+ *  1.3.250 SWR/power meter enhanced
+ *  1.4.250 fix spectrum bleed
+ *  1.5.250 reduce spectrum stack usage
+ *  1.6.250 move mode Auto
+ *  1.7.250 add 10000 to quick step
+ *  1.8.250 fix frequency step
+ *  1.9.250 FT8 hashtable bounds
+ *  2.0.250 include TFT_eSPI2 library
+ */
+
+/*
+  TODO:
+    add popups
+    user set callsign
+    FT8 AGC display
  */
 
 //#define DEBUGGING_SKIP
@@ -66,7 +75,7 @@
 #include "spectrum.h"
 #include "dsp.h"
 #include "menu.h"
-#include "cw.h"
+#include "CW.h"
 #include "cwdecode1.h"
 #include "cwdecode2.h"
 #include "ft8.h"
@@ -82,7 +91,7 @@
 #define YOUR_GRID "QE36"
 #define POS_CALL_X 70
 
-#define VERSION_STRING "  V1.0."
+#define VERSION_STRING "  V2.0."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u
@@ -153,13 +162,13 @@
 #define PIN_MIC     28 // analog MIC (ADC2)
 
 // these "Pins" used with TCA9534
-#define I2C_PIN_LPF1     0 // low-pass filter
-#define I2C_PIN_LPF2     1 // low-pass filter
-#define I2C_PIN_LPF3     2 // low-pass filter
-#define I2C_PIN_LPF4     3 // low-pass filter
-#define I2C_PIN_ATT      4 // 12dB attenuator relays
-#define I2C_PIN_HPF1     5 // high-pass filter low bit
-#define I2C_PIN_HPF2     6 // high-pass filter high bit
+#define I2C_PIN_LPF1 0 // low-pass filter
+#define I2C_PIN_LPF2 1 // low-pass filter
+#define I2C_PIN_LPF3 2 // low-pass filter
+#define I2C_PIN_LPF4 3 // low-pass filter
+#define I2C_PIN_ATT  4 // 12dB attenuator relays
+#define I2C_PIN_HPF1 5 // high-pass filter low bit
+#define I2C_PIN_HPF2 6 // high-pass filter high bit
 
 // width and height of LCD
 #define LCD_WIDTH         240
@@ -355,7 +364,7 @@ bands[] =
   {21000000UL, 21450000UL, 21200000UL},
   {24890000UL, 24990000UL, 24900000UL},
   {28000000UL, 29700000UL, 28500000UL},
-  { 3500000UL, 30000000UL,  5000000UL}
+  {  500000UL, 30000000UL,  5000000UL}
 };
 
 volatile static struct
@@ -791,7 +800,7 @@ void setup(void)
   stackpaint_core();
 #endif
 
-  // run DSP on core 0
+  // run DSP on core 1
   pinMode(PIN_REG,OUTPUT);
   // set pico regulator to low noise
   digitalWrite(PIN_REG,HIGH);
@@ -866,7 +875,7 @@ void setup(void)
   gpio_set_function(PIN_AUPWMH,GPIO_FUNC_PWM);
   gpio_set_function(PIN_AUPWML,GPIO_FUNC_PWM);
   audio_pwm = pwm_gpio_to_slice_num(PIN_AUPWML);
-  pwm_set_wrap(audio_pwm,63); // 240,000,000 / 64 = 3,750,000
+  pwm_set_wrap(audio_pwm,63); // 250,000,000 / 64 = 3,906,250
   pwm_set_both_levels(audio_pwm,0,31);
   pwm_set_enabled(audio_pwm,true);
 
@@ -927,7 +936,7 @@ void setup(void)
   // init rotary
   r.begin();
 
-  // init PLL and set default frequency
+  // init critical radio defaults
   radio.frequency = DEFAULT_FREQUENCY;
   radio.band = DEFAULT_BAND;
   radio.mode = DEFAULT_MODE;
@@ -1115,6 +1124,64 @@ static void show_tuning_step(void)
   lcd.print(radio.step);
 }
 
+// ---------------------------------------------------------------------------
+// Non-linear meter scale, shared by the PO and SWR bargraphs.
+// Knot values are in hundredths (100 = 1.0), positions are per-mille of the
+// bar (1000 = full scale). Bottom of the range is expanded so that 1.0..3.0
+// occupies the first ~55% of the bar. Retune here only; nothing else changes.
+// ---------------------------------------------------------------------------
+#define METER_SEGMENTS   16u
+#define METER_PITCH       5u
+#define METER_BLOCK       4u
+#define METER_BAR_WIDTH  (METER_SEGMENTS*METER_PITCH)   // 90 px
+#define METER_PO_FS      1000u                          // 10.0 W full scale
+
+struct meter_knot_t { uint16_t value; uint16_t pos; };
+static const meter_knot_t METER_SCALE[] =
+{
+  {    0u,    0u },
+  {  100u,   60u },
+  {  200u,  320u },
+  {  300u,  550u },
+  {  500u,  760u },
+  {  700u,  890u },
+  { 1000u, 1000u }
+};
+static const uint8_t METER_KNOTS = sizeof(METER_SCALE)/sizeof(METER_SCALE[0]);
+struct meter_label_t { uint16_t value; const char *text; };
+static const meter_label_t METER_LABELS[] =
+{
+  {  100u, "1"  },
+  {  200u, "2"  },
+  {  300u, "3"  },
+  {  500u, "5"  },
+  { 1000u, "10" }
+};
+static const uint8_t METER_LABEL_COUNT = sizeof(METER_LABELS)/sizeof(METER_LABELS[0]);
+
+// value in hundredths -> number of lit blocks (0..METER_SEGMENTS)
+static uint8_t meter_blocks(uint32_t value)
+{
+  uint32_t pos = 1000ul;
+  if (value<=(uint32_t)METER_SCALE[0].value)
+  {
+    pos = METER_SCALE[0].pos;
+  }
+  else for (uint8_t i=1u;i<METER_KNOTS;i++)
+  {
+    if (value<(uint32_t)METER_SCALE[i].value)
+    {
+      const uint32_t v0 = METER_SCALE[i-1u].value;
+      const uint32_t p0 = METER_SCALE[i-1u].pos;
+      const uint32_t v1 = METER_SCALE[i].value;
+      const uint32_t p1 = METER_SCALE[i].pos;
+      pos = p0 + ((value-v0)*(p1-p0))/(v1-v0);
+      break;
+    }
+  }
+  return (uint8_t)((pos*METER_SEGMENTS + 500ul)/1000ul);
+}
+
 static void show_swr(void)
 {
   static const uint32_t PO_DECAY_RATE = 250ul;
@@ -1167,17 +1234,31 @@ static void show_swr(void)
   // show power and SWR
   if (radio.graph_swr)
   {
-    // graph power
-    const uint8_t p = max_po / 10u;
-    for (uint8_t i=0;i<p;i++)
+    // scale labels, positioned from the same warp as the bars
+    lcd.setTextSize(1);
+    lcd.setTextColor(LCD_WHITE,LCD_BLACK);
+    for (uint8_t i=0u;i<METER_LABEL_COUNT;i++)
     {
-      lcd.fillRect(POS_METER_X+i*5+0,POS_METER_Y+14,4,4,LCD_WHITE);
+      const int16_t tick = (int16_t)(meter_blocks(METER_LABELS[i].value)*METER_PITCH);
+      const int16_t w = (int16_t)(strlen(METER_LABELS[i].text)*6u - 1u);
+      int16_t x = tick - w/2;
+      if (x<0) x = 0;
+      if (x+w > (int16_t)METER_BAR_WIDTH) x = (int16_t)METER_BAR_WIDTH - w;
+      lcd.setCursor(POS_METER_X+x,POS_METER_Y+2);
+      lcd.print(METER_LABELS[i].text);
     }
-    // graph SWR
-    const uint8_t s = vswr / 100u;
-    for (uint8_t i=0;i<s;i++)
+    // graph power (max_po is in 0.1W, so x10 gives hundredths)
+    const uint8_t p = meter_blocks(min(max_po*10ul,(uint32_t)METER_PO_FS));
+    for (uint8_t i=0u;i<p;i++)
     {
-      lcd.fillRect(POS_METER_X+i*5+0,POS_METER_Y+20,4,4,LCD_WHITE);
+      lcd.fillRect(POS_METER_X+i*METER_PITCH,POS_METER_Y+14,METER_BLOCK,METER_BLOCK,LCD_WHITE);
+    }
+    // graph SWR (vswr is already in hundredths)
+    const uint8_t s = meter_blocks(vswr);
+    for (uint8_t i=0u;i<s;i++)
+    {
+      const uint32_t c = i>3u?LCD_RED:LCD_WHITE;
+      lcd.fillRect(POS_METER_X+i*METER_PITCH,POS_METER_Y+20,METER_BLOCK,METER_BLOCK,c);
     }
   }
   else
@@ -1423,6 +1504,10 @@ static void show_debug_value(const int32_t v1,const int32_t v2 = 0)
 
 static void show_meter_dial(const uint8_t sig)
 {
+  if (radio.graph_swr && radio.tx_enable)
+  {
+    return;
+  }
   const uint8_t v = min(sig,15);
   lcd.setTextSize(1);
   lcd.setCursor(POS_METER_X,POS_METER_Y);
@@ -1430,7 +1515,8 @@ static void show_meter_dial(const uint8_t sig)
   lcd.print("1 3 5 7 9 +20");
   for (uint8_t i=0;i<v;i++)
   {
-    lcd.fillRect(POS_METER_X+i*5+0,POS_METER_Y+8,4,4,LCD_WHITE);
+    const uint32_t c = i<11?LCD_WHITE:LCD_RED;
+    lcd.fillRect(POS_METER_X+i*5+0,POS_METER_Y+8,4,4,c);
   }
 }
 
@@ -2307,7 +2393,7 @@ void __not_in_flash_func(loop1)(void)
       }
       dac_h = dac_audio >> 6;
       dac_l = dac_audio & 0x3f;
-      if (radio.cwdecode!=0)
+      if (radio.cwdecode != 0)
       {
         if (radio.mode==MODE_CWL || radio.mode==MODE_CWU)
         {
@@ -4897,7 +4983,7 @@ void loop(void)
           case BUTTON_SHORT_PRESS:
           {
             radio.step *= 10u;
-            if (radio.step>1000u) radio.step = 100u;
+            if (radio.step>10000u) radio.step = 100u;
             break;
           }
           case BUTTON_LONG_PRESS:
@@ -4920,11 +5006,14 @@ void loop(void)
         const int32_t tuning_delta = radio.tune;
         radio.tune = 0;
         mutex_exit(&rotary_mutex);
-        uint32_t new_frequency = radio.frequency;
-        new_frequency = new_frequency+(tuning_delta * (int32_t)radio.step);
-        new_frequency = new_frequency/radio.step;
-        new_frequency = new_frequency*radio.step;
-        new_frequency = constrain(new_frequency,bands[radio.band].lo,bands[radio.band].hi);
+        volatile uint32_t new_frequency = radio.frequency;
+        if (tuning_delta != 0)
+        {
+          const uint32_t step_modifer = (tuning_delta>0)?new_frequency:(new_frequency+radio.step-1);
+          new_frequency = (step_modifer / radio.step) * radio.step;
+          new_frequency += tuning_delta * radio.step;
+          new_frequency = constrain(new_frequency,bands[radio.band].lo,bands[radio.band].hi);
+        }
         if (new_frequency!=old_frequency || radio.mode!=old_mode)
         {
           radio.frequency = new_frequency;

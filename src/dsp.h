@@ -352,7 +352,7 @@ namespace DSP
     {
       agc_carrier = agc_envelope * 0.5f;
     }
-    agc_peak = agc_carrier * 2.0f;
+    agc_peak = agc_carrier * 4.0f;
 
     // gain from carrier level: m = 1.0 maps to 'target' at the DAC
     float gain = max_gain;

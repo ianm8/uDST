@@ -209,6 +209,7 @@ menu_options[NUM_MENU_ITEMS] =
     "Mode",
     10U,
     {
+      {OPTION_MODE_AUTO,"AUTO"},
       {OPTION_MODE_LSB,"LSB"},
       {OPTION_MODE_USB,"USB"},
       {OPTION_MODE_CWL,"CWL"},
@@ -217,7 +218,6 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_MODE_DGU,"DGU"},
       {OPTION_MODE_FT8,"FT8"},
       {OPTION_MODE_AM,"AM"},
-      {OPTION_MODE_AUTO,"AUTO"},
       {OPTION_EXIT,"Exit"}
     }
   },

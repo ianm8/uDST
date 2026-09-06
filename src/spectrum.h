@@ -4481,14 +4481,30 @@ namespace spectrum
     return scale;
   }
 
+  static inline uint32_t get_mag(const int16_t r, const int16_t i)
+  {
+    const uint32_t m = (uint32_t)abs((int32_t)r);
+    const uint32_t n = (uint32_t)abs((int32_t)i);
+    const uint32_t hi = (m > n) ? m : n;
+    const uint32_t lo = (m > n) ? n : m;
+    return ((15u * hi) >> 4) + ((15u * lo) >> 5);
+  }
+
   void process(int16_t ii[], int16_t qq[], uint8_t mag[], const int8_t gain)
   {
-    int16_t re[N_WAVE] = { 0 };
-    int16_t im[N_WAVE] = { 0 };
+    static int16_t re[N_WAVE] = { 0 };
+    static int16_t im[N_WAVE] = { 0 };
 
-    // DC estimate in Q16 fixed point:
-    // mean = sum / 1024, so
-    // Q16 mean = sum * 65536 / 1024 = sum * 64
+    // ---- persistent DC estimate ----------------------------------------
+    // Leaky integrator state: holds 2^DC_K * (Q16 mean). Estimate = acc >> DC_K.
+    // DC_K = 6 -> 64 blocks; at 31250/1024 = 30.5 blocks/s that's ~2.1 s,
+    // i.e. a ~0.5 Hz corner. Anything tuned further than that off centre is
+    // rejected as AC no matter how strong it is.
+    static constexpr int32_t DC_K = 6;
+    static int32_t dc1_acc = 0;
+    static int32_t dc2_acc = 0;
+    static bool dc_primed = false;
+
     int32_t dc1 = 0;
     int32_t dc2 = 0;
     for (uint32_t i = 0; i < N_WAVE; i++)
@@ -4496,54 +4512,67 @@ namespace spectrum
       dc1 += ii[i];
       dc2 += qq[i];
     }
-    int32_t dcq1 = dc1 * 64;
-    int32_t dcq2 = dc2 * 64;
 
-    // gate: receiver bias is well under 1 count, so a DC estimate
-    // beyond a few counts is a real carrier tuned to the centre —
-    // skip the subtraction and let it stay on the display.
-    // 3 counts, Q16
-    static constexpr int32_t dc_limit = 3 * 65536; 
-    if (dcq1 > dc_limit || dcq1 < -dc_limit ||
-        dcq2 > dc_limit || dcq2 < -dc_limit)
+    // current estimate, Q16 counts
+    int32_t dc1_q = dc1_acc >> DC_K;
+    int32_t dc2_q = dc2_acc >> DC_K;
+
+    if (!dc_primed)
     {
-      dcq1 = 0;
-      dcq2 = 0;
+      // seed from the first block so we don't spend 2 s converging from zero
+      dc1_acc = (dc1 * 64) << DC_K;
+      dc2_acc = (dc2 * 64) << DC_K;
+      dc1_q = dc1 * 64;
+      dc2_q = dc2 * 64;
+      dc_primed = true;
+    }
+    else
+    {
+      // Gate on deviation from the estimate, not on absolute level: a real
+      // carrier near centre shows up as a large excursion, hardware bias
+      // doesn't. Compared in raw-sum units, which also sidesteps the *64
+      // overflow at full-scale DC. 1 count of mean == N_WAVE in raw sum.
+      static constexpr int32_t dev_limit = (int32_t)N_WAVE;   // 1 count
+      const int32_t dev1 = dc1 - (dc1_q >> 6);
+      const int32_t dev2 = dc2 - (dc2_q >> 6);
+
+      if (dev1 <= dev_limit && dev1 >= -dev_limit &&
+          dev2 <= dev_limit && dev2 >= -dev_limit)
+      {
+        // dc1 is bounded here, so dc1 * 64 cannot overflow
+        dc1_acc += (dc1 * 64) - dc1_q;
+        dc2_acc += (dc2 * 64) - dc2_q;
+      }
+      // else: signal at centre, hold the estimate (and keep subtracting it,
+      // so a genuine carrier on centre still reads full scale on the display)
     }
 
-    // remove DC with error-feedback (fraction-saving) subtraction:
-    // the integer amounts subtracted average to the exact Q16 mean over
-    // the block, so the residual is an incoherent +/-1 LSB dither that
-    // disappears into the noise floor, instead of a constant sub-LSB
-    // offset that the FFT integrates coherently into the centre bin
-    int32_t acc1 = 0;
-    int32_t acc2 = 0;
-    for (uint32_t i = 0; i < N_WAVE; i++)
-    {
-      acc1 += dcq1;
-      acc2 += dcq2;
-      // integer part (arithmetic shift = floor)
-      const int32_t s1 = acc1 >> 16;
-      const int32_t s2 = acc2 >> 16;
-      // keep fractional remainder in [0, 65536)
-      acc1 &= 0xFFFF;
-      acc2 &= 0xFFFF;
-      re[i] = ii[i] - (int16_t)s1;
-      im[i] = qq[i] - (int16_t)s2;
-    }
+    // The estimate is a hardware bias, so it should be well under 1 count.
+    // Clamp anyway: the window-loop range analysis below depends on it.
+    static constexpr int32_t dc_clamp = 4 * 65536;
+    dc1_q = (dc1_q >  dc_clamp) ?  dc_clamp : (dc1_q < -dc_clamp ? -dc_clamp : dc1_q);
+    dc2_q = (dc2_q >  dc_clamp) ?  dc_clamp : (dc2_q < -dc_clamp ? -dc_clamp : dc2_q);
 
-    // Hann window with gain folded into a single rounded shift:
-    // (x * w) >> (15 - gain) is identical to the old pre-shift + (>> 15)
-    // for both signs of gain, but quantises once (rounded) instead of
-    // twice (floored), so the attenuation path no longer re-injects DC.
-    // Multiplying before shifting also removes the old value << gain,
-    // which could overflow int32 on large samples with high gain.
+    // Split into exact integer + fraction. Arithmetic shift floors and the
+    // mask gives the positive remainder, so this holds for both signs:
+    //   dc_i * 65536 + dc_f == dc_q
+    const int32_t dc1_i = dc1_q >> 16;
+    const int32_t dc2_i = dc2_q >> 16;
+    const uint32_t dc1_f = (uint32_t)dc1_q & 0xFFFFu;
+    const uint32_t dc2_f = (uint32_t)dc2_q & 0xFFFFu;
+
+    // ---- DC removal folded into the window multiply ---------------------
+    // No error feedback, no intermediate int16 store: the fraction is carried
+    // at full precision into the product, so there is nothing left to dither.
+    // caller must keep gain <= 14
     const int32_t shift = 15 - (int32_t)gain;
     const int32_t rnd = (shift > 0) ? (1 << (shift - 1)) : 0;
     for (uint32_t i = 0; i < N_WAVE; i++)
     {
-      const int32_t w_re = (int32_t)re[i] * (int32_t)window_hanning_1024[i];
-      const int32_t w_im = (int32_t)im[i] * (int32_t)window_hanning_1024[i];
+      const int32_t w = (int32_t)window_hanning_1024[i];
+      const uint32_t wu = (uint32_t)w;
+      const int32_t w_re = ((int32_t)ii[i] - dc1_i) * w - (int32_t)((dc1_f * wu) >> 16);
+      const int32_t w_im = ((int32_t)qq[i] - dc2_i) * w - (int32_t)((dc2_f * wu) >> 16);
       re[i] = (int16_t)((w_re + rnd) >> shift);
       im[i] = (int16_t)((w_im + rnd) >> shift);
     }
@@ -4551,24 +4580,15 @@ namespace spectrum
     // forward, complex FFT
     fix_fft(re, im, LOG2_N_WAVE);
 
-    // magnitude estimate
-    uint32_t magnitude[N_WAVE] = {0};
-    for (uint32_t i = 0; i < N_WAVE; i++)
-    {
-      // magnitude estimate
-      const uint32_t m = (uint32_t)abs(re[i]);
-      const uint32_t n = (uint32_t)abs(im[i]);
-      magnitude[i] = ((15 * max(m, n)) >> 4) + ((15 * min(m, n)) >> 5);
-    }
-
-    // reverse the frequency bins so that they are in order
+    // magnitude, log, and reverse the frequency bins
+    // so that they are in order
     for (int32_t i = 0, j = 511; i < 512; i++, j--)
     {
-      mag[i] = log32(magnitude[j]);
+      mag[i] = log32(get_mag(re[j], im[j]));
     }
     for (int32_t i = 512, j = 1023; i < 1024; i++, j--)
     {
-      mag[i] = log32(magnitude[j]);
+      mag[i] = log32(get_mag(re[j], im[j]));
     }
   }
 }
