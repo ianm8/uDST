@@ -1,5 +1,5 @@
 ## Libraries
- * Install the TFT_eSPI2 library provided in the **release** files - coming soon
+ * Install the TFT_eSPI2 library provided in the TFT_eSPI2 folder
  
 ## Build
  * Pi Pico 2
@@ -22,3 +22,13 @@
  * 0.11.250 improved sensitivity (AGC)
  * 0.12.250 notch filter
  * 1.0.250 move DSP to core 1
+ * 1.1.250 AM s-meter adjust
+ * 1.2.250 s-meter colour
+ * 1.3.250 SWR/power meter enhanced
+ * 1.4.250 fix spectrum bleed
+ * 1.5.250 reduce spectrum stack usage
+ * 1.6.250 move mode Auto
+ * 1.7.250 add 10000 to quick step
+ * 1.8.250 fix frequency step
+ * 1.9.250 FT8 hashtable bounds
+ * 2.0.250 include TFT_eSPI2 library
