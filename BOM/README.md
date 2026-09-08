@@ -1,5 +1,8 @@
 # BOM Notes
 
+## Crystal Oscillator
+24MHz TCXO to replace the 27MHz oscillator.
+
 ## Resistors
 All SM resistors are 1206 thick film of at least 125mW except R59 which should be at least 2.4W.
 
