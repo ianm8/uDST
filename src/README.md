@@ -1,3 +1,8 @@
+## Prerequisites
+This is an Arduino project for the Pi Pico 2. You will need the Pico Arduino core by Earle Philhower available here:
+
+https://github.com/earlephilhower/arduino-pico
+
 ## Libraries
  * Install the TFT_eSPI2 library provided in the TFT_eSPI2 folder
  
