@@ -1,7 +1,7 @@
 # BOM Notes
 
 ## Crystal Oscillator
-24MHz TCXO to replace the 27MHz oscillator.
+Optional but highly recommended, use a FT3MHUPM24.0-T1 24MHz TCXO to replace the 27MHz oscillator on the BRS-100.
 
 ## Resistors
 All SM resistors are 1206 thick film of at least 125mW except R59 which should be at least 2.4W.
