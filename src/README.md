@@ -32,3 +32,8 @@
  * 1.8.250 fix frequency step
  * 1.9.250 FT8 hashtable bounds
  * 2.0.250 include TFT_eSPI2 library
+ * 2.1.250 add popups
+ * 2.2.250 about menu
+ * 2.3.250 FT8 AGC display
+ * 2.4.250 set all defaults
+ * 2.5.250 FT8 auto calibration
