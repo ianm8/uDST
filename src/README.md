@@ -37,3 +37,4 @@
  * 2.3.250 FT8 AGC display
  * 2.4.250 set all defaults
  * 2.5.250 FT8 auto calibration
+ * 2.6.250 FT8 S9 at 80%
