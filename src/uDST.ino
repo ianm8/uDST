@@ -1,5 +1,5 @@
 /*
- * MBPTRX Version 2.0.250
+ * MBPTRX Version 2.5.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -44,13 +44,16 @@
  *  1.8.250 fix frequency step
  *  1.9.250 FT8 hashtable bounds
  *  2.0.250 include TFT_eSPI2 library
+ *  2.1.250 add popups
+ *  2.2.250 about menu
+ *  2.3.250 FT8 AGC display
+ *  2.4.250 set all defaults
+ *  2.5.250 FT8 auto calibration
  */
 
 /*
   TODO:
-    add popups
     user set callsign
-    FT8 AGC display
  */
 
 //#define DEBUGGING_SKIP
@@ -91,11 +94,12 @@
 #define YOUR_GRID "QE36"
 #define POS_CALL_X 70
 
-#define VERSION_STRING "  V2.0."
+#define VERSION_STRING "  V2.5."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u
 #define VOX_TIMEOUT 250u
+#define POPUP_TIMEOUT 5000u
 #define BAND_80M 0
 #define BAND_40M 1
 #define BAND_30M 2
@@ -311,6 +315,7 @@ volatile static struct
   bool mode_auto;
   bool graph_swr;
   bool notch_enable;
+  bool ft8_autocal;
   int8_t level[NUM_BANDS];
   int8_t slevel[NUM_BANDS];
 }
@@ -342,6 +347,7 @@ radio =
   false,
   false,
   true,
+  false,
   false,
   false,
   {0,0,0,0,0,0,0,0,0},
@@ -426,6 +432,7 @@ volatile static bool adj_notch_filter = false;
 volatile static bool vox_triggered = false;
 volatile static bool vox_mic_ready = false;
 volatile static char cw_decode_buf[32] = "";
+volatile static char sz_version[16] = "";
 volatile static uint32_t wp = 0;
 static uint8_t water[WATERFALL_ROWS][LCD_WIDTH] = {0};
 static uint8_t magnitude[1024] = {0};
@@ -761,6 +768,27 @@ static void restore_settings(void)
       radio.slevel[i] = radio.level[i];
     }
   }
+  if (radio.cw_dit<40 || radio.cw_dit>120)
+  {
+    radio.cw_dit = DEFAULT_CW_SPEED;
+  }
+  if (radio.cw_level<1 || radio.cw_level>3)
+  {
+    radio.cw_level = DEFAULT_CW_LEVEL;
+  }
+  if (radio.sidetone<500 || radio.sidetone>850)
+  {
+    radio.sidetone = DEFAULT_SIDETONE;
+  }
+  radio.cw_phase = ((uint64_t)radio.sidetone * (1ull << 32)) / SAMPLERATE;
+  if (radio.spectype!=SPECTRUM_WIND && radio.spectype!=SPECTRUM_GRASS)
+  {
+    radio.spectype = SPECTRUM_WIND;
+  }
+  if (radio.jnrlevel>3)
+  {
+    radio.jnrlevel = JNR_OFF;
+  }
   if (radio.micgain<25ul || radio.micgain>200ul)
   {
     radio.micgain = DEFAULT_MICGAIN;
@@ -968,14 +996,13 @@ void setup(void)
   disable_mic();
 
   // init LCD
-  char sz_version[16] = "";
   char sz_clksys[16] = "";
   memset(sz_clksys,0,sizeof(sz_clksys));
-  memset(sz_version,0,sizeof(sz_version));
+  memset((char*)sz_version,0,sizeof(sz_version));
   ultoa(clksys,sz_clksys,10);
   sz_clksys[3] = '\0';
-  strcpy(sz_version,VERSION_STRING);
-  strcat(sz_version,sz_clksys);
+  strcpy((char*)sz_version,VERSION_STRING);
+  strcat((char*)sz_version,sz_clksys);
   tft.init();
   tft.setRotation(1);
   tft.fillScreen(LCD_BLACK);
@@ -995,7 +1022,7 @@ void setup(void)
     lcd.setTextSize(1);
     lcd.setTextColor(LCD_WHITE,LCD_BLACK);
     lcd.setCursor(POS_VERSION_X,POS_VERSION_Y);
-    lcd.print(sz_version);
+    lcd.print((const char*)sz_version);
     lcd.pushSprite(0,0);
     delay(50);
   }
@@ -1005,7 +1032,7 @@ void setup(void)
   lcd.fillSprite(LCD_BLACK);
   lcd.setTextColor(LCD_WHITE,LCD_BLACK);
   lcd.setCursor(POS_VERSION_X,POS_VERSION_Y);
-  lcd.print(sz_version);
+  lcd.print((const char*)sz_version);
   lcd.setFreeFont(&FreeSansBold18pt7b);
   lcd.setCursor(POS_CALL_X,POS_SPLASH_Y);
   lcd.print(YOUR_CALL);
@@ -2000,6 +2027,58 @@ static void show_menu(void)
   lcd.setTextFont(1);
 }
 
+static char sz_popup[64] = "";
+static char sz_popup_heading[64] = "";
+static uint32_t popup_timeout = 0;
+
+static void set_popup(const char *sz_message,const char *sz_heading = NULL)
+{
+  if (sz_message)
+  {
+    memset(sz_popup,0,sizeof(sz_popup));
+    memset(sz_popup_heading,0,sizeof(sz_popup_heading));
+    strncpy(sz_popup,sz_message,sizeof(sz_popup)-1);
+    if (sz_heading)
+    {
+      strncpy(sz_popup_heading,sz_heading,sizeof(sz_popup_heading)-1);
+    }
+    else
+    {
+      strcpy(sz_popup_heading,"ATTENTION:");
+    }
+    popup_timeout = millis() + POPUP_TIMEOUT;
+  }
+}
+
+static void set_popup(volatile char *sz_message,const char *sz_heading = NULL)
+{
+  set_popup((const char*)sz_message,sz_heading);
+}
+
+static void show_popup(void)
+{
+  if (sz_popup[0] == '\0') return;
+  if (millis() > popup_timeout)
+  {
+    sz_popup[0] = '\0';
+    return;
+  }
+  // Filled box centred on screen
+  lcd.fillRect(10, 48, 220, 40, LCD_DARKRED);
+  lcd.drawRect(10, 48, 220, 40, LCD_WHITE);
+  lcd.setTextFont(1);
+  lcd.setTextSize(1);
+  lcd.setTextColor(LCD_YELLOW, LCD_DARKRED);
+  lcd.setCursor(16, 52);
+  lcd.print(sz_popup_heading);
+  lcd.setTextSize(2);
+  lcd.setTextColor(LCD_WHITE, LCD_DARKRED);
+  lcd.setCursor(16, 64);
+  lcd.print(sz_popup);
+  lcd.setTextFont(1);
+  lcd.setTextSize(1);
+}
+
 static void update_display(const uint32_t signal_level = 0u)
 {
   display_clear();
@@ -2019,6 +2098,7 @@ static void update_display(const uint32_t signal_level = 0u)
   show_spectrum();
   show_cw_decode();
   show_menu();
+  show_popup();
   show_debug_value(debug_value_1,debug_value_2);
   display_refresh();
 }
@@ -2731,6 +2811,9 @@ static ft8_cq_t ft8_cq = { 0 };
 static ft8_btn_t ft8_button_deferred = FT8_BTN_IDLE;
 static uint32_t ft8_button_down_time = 0;
 
+// auto calibrate
+static uint32_t ft8_cal_try = 0;
+
 //------------------------------------------------------------------------------
 // DISPLAY FUNCTIONS
 //------------------------------------------------------------------------------
@@ -2864,6 +2947,31 @@ static void ft8_show_progress(const uint32_t progress)
   lcd.drawLine(0,132,bar,132,radio.tx_enable?LCD_RED:LCD_GREEN);
   lcd.drawLine(0,133,bar,133,radio.tx_enable?LCD_RED:LCD_GREEN);
   lcd.drawLine(0,134,bar,134,radio.tx_enable?LCD_RED:LCD_GREEN);
+}
+
+static void ft8_show_agc(void)
+{
+  // Show RX audio level as a bar across the top. agc_peak is an amplitude
+  // (audio_out * 32768.0f) so it spans roughly 0..32768 - the bar has to be
+  // logarithmic or everything below a very strong signal sits in the first
+  // two pixels. 0 dB (peak 1.0) to 90 dB (peak 32768) across the full width.
+  static constexpr float DB_FULL_SCALE = 90.0f;
+  const float peak = DSP::agc_peak;
+
+  // dark track, so "no signal" reads as an empty bar rather than a missing one
+  lcd.drawLine(0,FT8_AGC_Y+0,239,FT8_AGC_Y+0,LCD_DARKGREY);
+  lcd.drawLine(0,FT8_AGC_Y+1,239,FT8_AGC_Y+1,LCD_DARKGREY);
+  lcd.drawLine(0,FT8_AGC_Y+2,239,FT8_AGC_Y+2,LCD_DARKGREY);
+  if (peak <= 1.0f) return;
+
+  const float db = 20.0f * log10f(peak);
+  int32_t bar = (int32_t)(db * (239.0f / DB_FULL_SCALE));
+  if (bar < 0) bar = 0;
+  if (bar > 239) bar = 239;
+
+  lcd.drawLine(0,FT8_AGC_Y+0,bar,FT8_AGC_Y+0,LCD_YELLOW);
+  lcd.drawLine(0,FT8_AGC_Y+1,bar,FT8_AGC_Y+1,LCD_YELLOW);
+  lcd.drawLine(0,FT8_AGC_Y+2,bar,FT8_AGC_Y+2,LCD_YELLOW);
 }
 
 // Show slot parity indicator and TX/RX status top-right
@@ -3217,6 +3325,7 @@ static void ft8_display(
   const bool calibrating = false)
 {
   display_clear();
+  ft8_show_agc();
   ft8_show_pulse();
   ft8_show_swr();
   ft8_show_frequency();
@@ -4103,6 +4212,58 @@ static bool ft8_qso_detect_poach(
   return true;
 }
 
+// Call once per slot from the end of FT8_STATE_DECODING.
+// Updates slot_calibrate_ms in place.
+static const ft8_cal_result_t ft8_auto_calibrate(
+  const uint32_t n,
+  char lines[][FTX_MAX_DISPLAY_LENGTH],
+  uint32_t &cal_ms)
+{
+  static float dts[FT8_MAX_DECODED] = {0.0f};
+  char buf[24];
+
+  memset(dts,0,sizeof(dts));
+  if (n > 0u)
+  {
+    uint32_t m = 0u;
+    for (uint32_t i = 0u; i < n; i++)
+    {
+      float snr = 0.0f, dt = 0.0f, freq = 0.0f;
+      char msg[FTX_MAX_MESSAGE_LENGTH] = "";
+      if (sscanf(lines[i], "%f %f %f %34[^\n]", &snr, &dt, &freq, msg) == 4)
+      {
+        dts[m++] = dt;
+      }
+    }
+    if (m > 0u)
+    {
+      // median - insertion sort, m is small
+      for (uint32_t i = 1u; i < m; i++)
+      {
+        const float v = dts[i];
+        int32_t j = (int32_t)i - 1;
+        while (j >= 0 && dts[j] > v) { dts[j+1] = dts[j]; j--; }
+        dts[j+1] = v;
+      }
+      const float median = (m & 1u) ? dts[m/2u] : (dts[m/2u - 1u] + dts[m/2u]) * 0.5f;
+      cal_ms = (uint32_t)((int32_t)cal_ms + (int32_t)(median * 1000.0f));
+      snprintf(buf, sizeof(buf), "Locked %+.2fs", median);
+      ft8_set_popup(buf,"FT8 AUTOCAL:");
+      return FT8_CAL_DONE;
+    }
+  }
+  if (++ft8_cal_try >= FT8_CAL_MAX_TRIES)
+  {
+    ft8_set_popup("No signals found","FT8 AUTOCAL:");
+    return FT8_CAL_NOSIGNAL;
+  }
+
+  cal_ms += FT8_CAL_STEP_MS;
+  snprintf(buf, sizeof(buf), "Searching %lu/%u", ft8_cal_try + 1ul, FT8_CAL_MAX_TRIES);
+  ft8_set_popup(buf,"FT8 AUTOCAL:");
+  return FT8_CAL_WORKING;
+}
+
 //------------------------------------------------------------------------------
 // ft8_qso_abort()
 // Clean abort — returns to history browse, stays in FT8 mode.
@@ -4150,6 +4311,7 @@ static const bool do_ft8(const bool cal_reset = false)
   if (cal_reset)
   {
     slot_calibrate_ms = 0;
+    set_popup("Calibration Reset","FT8 INFO:");
     return false;
   }
 
@@ -4159,31 +4321,40 @@ static const bool do_ft8(const bool cal_reset = false)
   //--------------------------------------------------------------------------
   if (slot_calibrate_ms == 0)
   {
-    delay(50);
-    // wait for release
-    while (digitalRead(PIN_ENCBUT) == LOW)
-      delay(50);
-
-    uint32_t cal_progress = 0;
-    uint32_t disp_update  = 0;
-    const uint32_t cal_start = millis();
-    while (digitalRead(PIN_ENCBUT) == HIGH)
+    if (radio.ft8_autocal)
     {
-      const uint32_t now = millis();
-      // give them minute!
-      if (now - cal_start > 60000ul) return false;
-      if (now > disp_update)
-      {
-        disp_update = now + 50ul;
-        ft8_display(0, ft8_state, cal_progress++, true);
-        if (cal_progress > 240) cal_progress = 0;
-      }
+      // arbitrary phase
+      // auto will fix it
+      slot_calibrate_ms = millis();
     }
-    slot_calibrate_ms = millis();
-    delay(50);
-    // wait for release
-    while (digitalRead(PIN_ENCBUT) == LOW)
+    else
+    {
       delay(50);
+      // wait for release
+      while (digitalRead(PIN_ENCBUT) == LOW)
+        delay(50);
+
+      uint32_t cal_progress = 0;
+      uint32_t disp_update  = 0;
+      const uint32_t cal_start = millis();
+      while (digitalRead(PIN_ENCBUT) == HIGH)
+      {
+        const uint32_t now = millis();
+        // give them minute!
+        if (now - cal_start > 60000ul) return false;
+        if (now > disp_update)
+        {
+          disp_update = now + 50ul;
+          ft8_display(0, ft8_state, cal_progress++, true);
+          if (cal_progress > 240) cal_progress = 0;
+        }
+      }
+      slot_calibrate_ms = millis();
+      delay(50);
+      // wait for release
+      while (digitalRead(PIN_ENCBUT) == LOW)
+        delay(50);
+    }
   }
 
   //--------------------------------------------------------------------------
@@ -4266,6 +4437,12 @@ static const bool do_ft8(const bool cal_reset = false)
           should_tx = ft8_selected.valid &&
             (ft8_selected.respond_in_even_slot == even_slot);
         }
+        if (radio.ft8_autocal)
+        {
+          // be sure never to TX
+          // while calibrating
+          should_tx = false;
+        }
         if (should_tx)
         {
           ft8_state = FT8_STATE_TRANSMITTING;
@@ -4324,7 +4501,13 @@ static const bool do_ft8(const bool cal_reset = false)
       memset(ft8_lines, 0, sizeof(ft8_lines));
       const uint32_t n = ft8_decode(&ft8mon, ft8_lines, ft8_ui_callback);
       ft8_history_add(ft8_lines, n, even_slot, (uint8_t)slot_num);
-
+      if (radio.ft8_autocal)
+      {
+        if (ft8_auto_calibrate(n, ft8_lines, slot_calibrate_ms) != FT8_CAL_WORKING)
+        {
+          radio.ft8_autocal = false;
+        }
+      }
       if (ft8_qso.active) ft8_qso_check_rx(ft8_lines, n);
 
       // detect if the station we're working is being poached
@@ -4628,6 +4811,7 @@ void loop(void)
   static bool old_graph_swr = radio.graph_swr;
   static bool old_attenuator = radio.attenuator;
   static bool old_notch_enable = radio.notch_enable;
+  static bool old_ft8_autocal = radio.ft8_autocal;
   static mode_t old_mode = radio.mode;
 
   // process button press
@@ -4737,6 +4921,8 @@ void loop(void)
         case OPTION_FT8_CQ_POTA:     radio.ft8_cq = FT8_CQ_POTA;                     break;
         case OPTION_FT8_CQ_SOTA:     radio.ft8_cq = FT8_CQ_SOTA;                     break;
         case OPTION_FT8_CALSET:      do_ft8(true);                                   break;
+        case OPTION_FT8_AUTOCAL:     radio.ft8_autocal = true;                       break;
+        case OPTION_VERSION:         set_popup(sz_version,"VERSION:");               break;
         case OPTION_EXIT:            radio.menu_active = false;                      break;
       }
 
@@ -4772,6 +4958,7 @@ void loop(void)
         {
           // maintain notch condition
           radio.notch_enable = old_notch_enable;
+          set_popup("Notch: SSB only");
         }
       }
 
@@ -4840,6 +5027,17 @@ void loop(void)
       {
         old_graph_swr = radio.graph_swr;
         settings_changed = true;
+        set_popup(radio.graph_swr?"Graph SWR":"Numeric SWR");
+      }
+
+      // FT8 auto cal
+      if (radio.ft8_autocal != old_ft8_autocal)
+      {
+        old_ft8_autocal = radio.ft8_autocal;
+        if (radio.ft8_autocal)
+        {
+          set_popup("Auto cal enabled","FT8 INFO:");
+        }
       }
 
       // save the settings

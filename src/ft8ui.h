@@ -53,8 +53,14 @@
 #define FT8_SWR_Y       3
 #define FT8_PWR_X       13
 #define FT8_PWR_Y       13
+#define FT8_AGC_Y       25
 
 #define FT8_AGED_COLOUR (lcd.color565(180, 180, 180))
+
+// auto calibrate
+// sync search covers 4.72 s, so 4 s steps overlap
+#define FT8_CAL_MAX_TRIES 5u
+#define FT8_CAL_STEP_MS   4000ul
 
 //------------------------------------------------------------------------------
 // FT8 STATE MACHINES
@@ -141,3 +147,10 @@ typedef enum
   FT8_BTN_SHORT,
   FT8_BTN_LONG
 } ft8_btn_t;
+
+typedef enum
+{
+  FT8_CAL_WORKING,
+  FT8_CAL_DONE,
+  FT8_CAL_NOSIGNAL
+} ft8_cal_result_t;

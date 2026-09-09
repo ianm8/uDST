@@ -32,7 +32,7 @@
 
 */
 
-#define NUM_MENU_ITEMS 19U
+#define NUM_MENU_ITEMS 20U
 #define NUM_MENU_OPTIONS 10U
 
 enum menu_top_t
@@ -55,6 +55,7 @@ enum menu_top_t
   MENU_GRAPH_SWR,
   MENU_ATTENUATOR,
   MENU_FT8,
+  MENU_ABOUT,
   MENU_EXIT
 };
 
@@ -151,6 +152,8 @@ enum option_value_t
   OPTION_FT8_CQ_POTA,
   OPTION_FT8_CQ_SOTA,
   OPTION_FT8_CALSET,
+  OPTION_FT8_AUTOCAL,
+  OPTION_VERSION,
   OPTION_NONE,
   OPTION_EXIT
 };
@@ -309,7 +312,7 @@ menu_options[NUM_MENU_ITEMS] =
   {
     MENU_FT8,
     "FT8 Options",
-    7U,
+    8U,
     {
       {OPTION_FT8_CQ_CQ,"CQ"},
       {OPTION_FT8_CQ_DX,"CQ DX"},
@@ -317,8 +320,8 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_FT8_CQ_POTA,"CQ POTA"},
       {OPTION_FT8_CQ_SOTA,"CQ SOTA"},
       {OPTION_FT8_CALSET,"Reset Cal"},
+      {OPTION_FT8_AUTOCAL,"Auto Cal"},
       {OPTION_EXIT,"Exit"},
-      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
@@ -467,6 +470,23 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_ATTENUATOR_ON,"On"},
       {OPTION_ATTENUATOR_OFF,"Off"},
       {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"}
+    }
+  },
+  {
+    MENU_ATTENUATOR,
+    "About",
+    2U,
+    {
+      {OPTION_VERSION,"Version"},
+      {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
