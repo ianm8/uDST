@@ -1,5 +1,5 @@
 /*
- * MBPTRX Version 2.5.250
+ * MBPTRX Version 2.6.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -49,6 +49,7 @@
  *  2.3.250 FT8 AGC display
  *  2.4.250 set all defaults
  *  2.5.250 FT8 auto calibration
+ *  2.6.250 FT8 S9 at 80%
  */
 
 /*
@@ -94,7 +95,7 @@
 #define YOUR_GRID "QE36"
 #define POS_CALL_X 70
 
-#define VERSION_STRING "  V2.5."
+#define VERSION_STRING "  V2.6."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u
@@ -2954,8 +2955,15 @@ static void ft8_show_agc(void)
   // Show RX audio level as a bar across the top. agc_peak is an amplitude
   // (audio_out * 32768.0f) so it spans roughly 0..32768 - the bar has to be
   // logarithmic or everything below a very strong signal sits in the first
-  // two pixels. 0 dB (peak 1.0) to 90 dB (peak 32768) across the full width.
+  // two pixels. 0 dB (peak 1.0) to 90 dB (peak 32768) across the full width,
+  // but the scale bends at S9 (peak ~200, 46 dB) so S9 lands at 80% of the
+  // bar - below S9 gets most of the resolution, S9+ reports compress into
+  // the remaining 20%, like a conventional S-meter.
   static constexpr float DB_FULL_SCALE = 90.0f;
+  static constexpr float DB_S9 = 20.0f * log10f(200.0f); // 46.0206f = 20*log10(200)
+  static constexpr float BAR_WIDTH = 239.0f;
+  static constexpr float BAR_AT_S9 = BAR_WIDTH * 0.8f;
+
   const float peak = DSP::agc_peak;
 
   // dark track, so "no signal" reads as an empty bar rather than a missing one
@@ -2965,7 +2973,16 @@ static void ft8_show_agc(void)
   if (peak <= 1.0f) return;
 
   const float db = 20.0f * log10f(peak);
-  int32_t bar = (int32_t)(db * (239.0f / DB_FULL_SCALE));
+  float barf = 0.0f;
+  if (db <= DB_S9)
+  {
+    barf = db * (BAR_AT_S9 / DB_S9);
+  }
+  else
+  {
+    barf = BAR_AT_S9 + (db - DB_S9) * ((BAR_WIDTH - BAR_AT_S9) / (DB_FULL_SCALE - DB_S9));
+  }
+  int32_t bar = (int32_t)barf;
   if (bar < 0) bar = 0;
   if (bar > 239) bar = 239;
 

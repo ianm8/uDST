@@ -326,7 +326,6 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_NONE,"None"}
     }
   },
-
   {
     MENU_CW_SPEED,
     "CW Speed",
@@ -480,7 +479,7 @@ menu_options[NUM_MENU_ITEMS] =
     }
   },
   {
-    MENU_ATTENUATOR,
+    MENU_ABOUT,
     "About",
     2U,
     {

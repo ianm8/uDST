@@ -58,7 +58,8 @@
 #define FT8_AGED_COLOUR (lcd.color565(180, 180, 180))
 
 // auto calibrate
-// sync search covers 4.72 s, so 4 s steps overlap
+// sync search covers 4.72s
+// so 4s steps overlap
 #define FT8_CAL_MAX_TRIES 5u
 #define FT8_CAL_STEP_MS   4000ul
 
