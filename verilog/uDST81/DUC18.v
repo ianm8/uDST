@@ -3,7 +3,7 @@
 // Registered 16x16 signed multiplier (32-bit product). Latency = 3 clocks.
 //
 // The INPUTS are registered (a_r, b_r) so the multiply runs register-to-
-// register and packs into the iCE40 SB_MAC16 DSP (input regs + multiplier
+// register and packs into the GOWIN DSP block (input regs + multiplier
 // pipeline reg + output reg). That register placement is what lets it close
 // timing at ~81 MHz; registering only the output would leave the full
 // combinational multiply in one clock. Synthesize with `synth_ice40 -dsp`,
