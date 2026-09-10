@@ -115,7 +115,7 @@ static char* stpcpy(char* dst, const char* src)
 #define FT8_SYMBOL_PERIOD   (0.160f)    ///< FT8 symbol duration, seconds
 #define FT8_SLOT_TIME       (15.0f)     ///< FT8 slot period, seconds
 #define FT8_BLOCK_SIZE      1250        ///< Real samples per symbol (7812.5 * 0.160)
-#define FT8_FFT_SIZE        2500        ///< 2x zero-padded FFT size
+#define FT8_FFT_SIZE        2500        ///< 2x samples FFT size
 #define FT8_FFT_NORM        (2.0f / FT8_FFT_SIZE)  ///< FFT normalisation factor = 0.0008
 
 // Oversampling

@@ -4632,7 +4632,7 @@ namespace FILTER
   {
     // 31250
     // att: 60dB
-    // Lo: 300
+    // Lo: 200
     static float x[FIR_LENGTH] = { 0.0f };
     static uint8_t sample_index = 0;
     uint8_t i = sample_index;

@@ -1,5 +1,5 @@
 /*
- * MBPTRX Version 2.6.250
+ * MBPTRX Version 2.7.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -50,6 +50,7 @@
  *  2.4.250 set all defaults
  *  2.5.250 FT8 auto calibration
  *  2.6.250 FT8 S9 at 80%
+ *  2.7.250 fix comments
  */
 
 /*
@@ -95,7 +96,7 @@
 #define YOUR_GRID "QE36"
 #define POS_CALL_X 70
 
-#define VERSION_STRING "  V2.6."
+#define VERSION_STRING "  V2.7."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u
@@ -829,7 +830,7 @@ void setup(void)
   stackpaint_core();
 #endif
 
-  // run DSP on core 1
+  // run UI on core 0
   pinMode(PIN_REG,OUTPUT);
   // set pico regulator to low noise
   digitalWrite(PIN_REG,HIGH);
@@ -1056,7 +1057,7 @@ void setup(void)
 
 void setup1(void)
 {
-  // run UI on core 1
+  // run DSP on core 1
   // only go to loop1 when setup() has completed
 #ifdef DEBUG_STACKCHECK_CORE1
   stackpaint_core();

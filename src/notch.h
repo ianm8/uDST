@@ -22,8 +22,8 @@
 //        >= 20 dB over about 39 Hz
 //        -3 dB points at about +/- 79 Hz
 //
-//  Cost on RP2350 @ 240 MHz: about 60 clock cycles per sample (~0.8% of the
-//  7680 cycle frame at 31250 Hz).  Coefficient design is done off the audio
+//  Cost on RP2350 @ 250 MHz: about 60 clock cycles per sample (~0.8% of the
+//  8000 cycle frame at 31250 Hz).  Coefficient design is done off the audio
 //  path, only when the tuning changes.
 //
 //  NOTE: everything is float.  Do not let a double sneak in - double is
