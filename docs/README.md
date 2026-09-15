@@ -42,3 +42,7 @@ Note, for improved resolution, take a look at the associated SVG file.
 ## FT8
 
 ![DDC Block Diagram](https://github.com/ianm8/uDST/blob/main/docs/uDST_structure_3_ft8.png?raw=true)
+
+# How it works
+
+## ![This file](https://github.com/ianm8/uDST/blob/main/docs/uDST_How_It_Works.pdf?raw=true) was provided by Brian W8BDM. He wanted to have a better understanding of how uDST worked so he got some help from AI and this file is the result. It is a very interesting and informative read. Thanks Brian!
