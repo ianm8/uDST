@@ -32,7 +32,7 @@
 
 */
 
-#define NUM_MENU_ITEMS 20U
+#define NUM_MENU_ITEMS 21U
 #define NUM_MENU_OPTIONS 10U
 
 enum menu_top_t
@@ -55,6 +55,7 @@ enum menu_top_t
   MENU_GRAPH_SWR,
   MENU_ATTENUATOR,
   MENU_FT8,
+  MENU_CALLSIGN,
   MENU_ABOUT,
   MENU_EXIT
 };
@@ -153,7 +154,10 @@ enum option_value_t
   OPTION_FT8_CQ_SOTA,
   OPTION_FT8_CALSET,
   OPTION_FT8_AUTOCAL,
+  OPTION_CALL_RESET,
+  OPTION_CALL_REBOOT,
   OPTION_VERSION,
+  OPTION_REBOOT,
   OPTION_NONE,
   OPTION_EXIT
 };
@@ -191,23 +195,6 @@ menu_options[NUM_MENU_ITEMS] =
     }
   },
   {
-    MENU_STEP,
-    "Step",
-    8U,
-    {
-      {OPTION_STEP_10,"10"},
-      {OPTION_STEP_100,"100"},
-      {OPTION_STEP_500,"500"},
-      {OPTION_STEP_1000,"1000"},
-      {OPTION_STEP_5000,"5000"},
-      {OPTION_STEP_10000,"10000"},
-      {OPTION_STEP_100000,"100000"},
-      {OPTION_EXIT,"Exit"},
-      {OPTION_NONE,"None"},
-      {OPTION_NONE,"None"}
-    }
-  },
-  {
     MENU_MODE,
     "Mode",
     10U,
@@ -222,6 +209,23 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_MODE_FT8,"FT8"},
       {OPTION_MODE_AM,"AM"},
       {OPTION_EXIT,"Exit"}
+    }
+  },
+  {
+    MENU_STEP,
+    "Step",
+    8U,
+    {
+      {OPTION_STEP_10,"10"},
+      {OPTION_STEP_100,"100"},
+      {OPTION_STEP_500,"500"},
+      {OPTION_STEP_1000,"1000"},
+      {OPTION_STEP_5000,"5000"},
+      {OPTION_STEP_10000,"10000"},
+      {OPTION_STEP_100000,"100000"},
+      {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"}
     }
   },
   {
@@ -479,13 +483,30 @@ menu_options[NUM_MENU_ITEMS] =
     }
   },
   {
-    MENU_ABOUT,
-    "About",
-    2U,
+    MENU_CALLSIGN,
+    "Callsign",
+    3U,
     {
-      {OPTION_VERSION,"Version"},
+      {OPTION_CALL_RESET,"Clear"},
+      {OPTION_CALL_REBOOT,"..Reboot"},
       {OPTION_EXIT,"Exit"},
       {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"}
+    }
+  },
+  {
+    MENU_ABOUT,
+    "About",
+    3U,
+    {
+      {OPTION_VERSION,"Version"},
+      {OPTION_REBOOT,"Reboot"},
+      {OPTION_EXIT,"Exit"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},

@@ -91,7 +91,7 @@ inline AsyncSPI::AsyncSPI(PIO pio, uint sm, uint cs_pin, uint sck_pin,
     : pio_(pio), sm_(sm), cs_pin_(cs_pin), sck_pin_(sck_pin),
       mosi_pin_(mosi_pin), miso_pin_(miso_pin)
 {
-  // Load program and build the config (this 'c' was missing before).
+  // Load program and build the config.
   uint offset = pio_add_program(pio_, &spi_master_32_cs_program);
   pio_sm_config c = spi_master_32_cs_program_get_default_config(offset);
 

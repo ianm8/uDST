@@ -1,5 +1,5 @@
 /*
- * MBPTRX Version 2.7.250
+ * uDST Version 3.0.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -51,11 +51,9 @@
  *  2.5.250 FT8 auto calibration
  *  2.6.250 FT8 S9 at 80%
  *  2.7.250 fix comments
- */
-
-/*
-  TODO:
-    user set callsign
+ *  2.8.250 move mode 2nd menu
+ *  2.9.250 reboot option
+ *  3.0.250 user set callsign
  */
 
 //#define DEBUGGING_SKIP
@@ -92,11 +90,7 @@
 #include "ArialBold16pt7b.h"
 #include "stackpaint.h"
 
-#define YOUR_CALL "VK7IAN"
-#define YOUR_GRID "QE36"
-#define POS_CALL_X 70
-
-#define VERSION_STRING "  V2.7."
+#define VERSION_STRING "  V3.0."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u
@@ -179,6 +173,7 @@
 // width and height of LCD
 #define LCD_WIDTH         240
 #define LCD_HEIGHT        135
+#define POS_CALL_X         70
 #define POS_SPLASH_X       80
 #define POS_SPLASH_Y       60
 #define POS_VERSION_X       0
@@ -320,6 +315,8 @@ volatile static struct
   bool ft8_autocal;
   int8_t level[NUM_BANDS];
   int8_t slevel[NUM_BANDS];
+  char callsign[16];
+  char grid[16];
 }
 radio =
 {
@@ -353,7 +350,9 @@ radio =
   false,
   false,
   {0,0,0,0,0,0,0,0,0},
-  {0,0,0,0,0,0,0,0,0}
+  {0,0,0,0,0,0,0,0,0},
+  "",
+  ""
 };
 
 static struct
@@ -438,6 +437,12 @@ volatile static char sz_version[16] = "";
 volatile static uint32_t wp = 0;
 static uint8_t water[WATERFALL_ROWS][LCD_WIDTH] = {0};
 static uint8_t magnitude[1024] = {0};
+
+/*
+ * Callsign and 4-character Maidenhead grid entry for uDST / MBPTRX.
+ * 240 x 135 display, drawn into the "lcd" sprite (TFT_eSPI2).
+ */
+#include "station_entry.h"
 
 static void error_stop(const uint32_t err_code)
 {
@@ -539,10 +544,10 @@ static void run_spi_loopback_test(void)
 // Call from setup(); on false, invoke error_stop(ERROR_FPGA).
 static const bool check_fpga_data_ready(void)
 {
-  // data_ready is ~31.25 kHz (80 MHz) or ~31.64 kHz (81 MHz): period ~32 us,
+  // data_ready is ~31.25 kHz, period ~32 us,
   // ~16 us high / ~16 us low. We don't measure exact frequency -- we just
   // confirm it's toggling at roughly the right rate, which separates "alive"
-  // from "dead/disconnected/not-clocking" robustly across the 80/81 MHz change.
+  // from "dead/disconnected/not-clocking"
 
   // Count edges over a fixed window and check the count is in a sane band.
   // Over 10 ms at 31.25 kHz we expect ~312 full cycles = ~625 edges.
@@ -722,21 +727,26 @@ static void save_settings(void)
   mute();
   delay(100);
   EEPROM.begin(256);
-  EEPROM.put(0x0*sizeof(uint32_t),key);
-  EEPROM.put(0x1*sizeof(uint32_t),(uint32_t)radio.cw_dit);
-  EEPROM.put(0x2*sizeof(uint32_t),(uint32_t)radio.cw_level);
-  EEPROM.put(0x3*sizeof(uint32_t),(uint32_t)radio.sidetone);
-  EEPROM.put(0x4*sizeof(uint32_t),(uint32_t)radio.cw_phase);
-  EEPROM.put(0x5*sizeof(uint32_t),(uint32_t)radio.spectype);
-  EEPROM.put(0x6*sizeof(uint32_t),(uint32_t)radio.jnrlevel);
-  EEPROM.put(0x7*sizeof(uint32_t),(uint32_t)radio.micgain);
-  EEPROM.put(0x8*sizeof(uint32_t),(uint32_t)radio.cessb?1u:0u);
-  EEPROM.put(0x9*sizeof(uint32_t),(uint32_t)radio.bandwidth);
-  EEPROM.put(0xa*sizeof(uint32_t),(uint32_t)radio.graph_swr?1u:0u);
-  for (uint32_t i=0;i<NUM_BANDS;i++)
+  uint32_t i = 0;
+  EEPROM.put(i,key);                             i += sizeof(uint32_t);
+  EEPROM.put(i,(uint32_t)radio.cw_dit);          i += sizeof(uint32_t);
+  EEPROM.put(i,(uint32_t)radio.cw_level);        i += sizeof(uint32_t);
+  EEPROM.put(i,(uint32_t)radio.sidetone);        i += sizeof(uint32_t);
+  EEPROM.put(i,(uint32_t)radio.cw_phase);        i += sizeof(uint32_t);
+  EEPROM.put(i,(uint32_t)radio.spectype);        i += sizeof(uint32_t);
+  EEPROM.put(i,(uint32_t)radio.jnrlevel);        i += sizeof(uint32_t);
+  EEPROM.put(i,(uint32_t)radio.micgain);         i += sizeof(uint32_t);
+  EEPROM.put(i,(uint32_t)radio.cessb?1u:0u);     i += sizeof(uint32_t);
+  EEPROM.put(i,(uint32_t)radio.bandwidth);       i += sizeof(uint32_t);
+  EEPROM.put(i,(uint32_t)radio.graph_swr?1u:0u); i += sizeof(uint32_t);
+  for (uint32_t j=0;j<NUM_BANDS;j++)
   {
-    EEPROM.put((i+0xb)*sizeof(uint32_t),(uint32_t)radio.level[i]);
+    EEPROM.put(i,(uint32_t)radio.level[j]);
+    i += sizeof(uint32_t);
   }
+  EEPROM.put(i,radio.callsign);
+  i += sizeof(radio.callsign);
+  EEPROM.put(i,radio.grid);
   EEPROM.end();
   unmute();
 }
@@ -748,27 +758,34 @@ static void restore_settings(void)
   EEPROM.get(0,key);
   if (key==0x12345678)
   {
+    uint32_t i = sizeof(uint32_t);
     uint32_t data32 = 0;
-    EEPROM.get(0x1*sizeof(uint32_t),data32); radio.cw_dit   = data32;
-    EEPROM.get(0x2*sizeof(uint32_t),data32); radio.cw_level = data32;
-    EEPROM.get(0x3*sizeof(uint32_t),data32); radio.sidetone = data32;
-    EEPROM.get(0x4*sizeof(uint32_t),data32); radio.cw_phase = data32;
-    EEPROM.get(0x5*sizeof(uint32_t),data32); radio.spectype = data32;
-    EEPROM.get(0x6*sizeof(uint32_t),data32); radio.jnrlevel = data32;
-    EEPROM.get(0x7*sizeof(uint32_t),data32); radio.micgain = data32;
-    EEPROM.get(0x8*sizeof(uint32_t),data32); radio.cessb = data32==1?true:false;
-    EEPROM.get(0x9*sizeof(uint32_t),data32); radio.bandwidth = data32;
-    EEPROM.get(0xa*sizeof(uint32_t),data32); radio.graph_swr = data32==1?true:false;
-    for (uint32_t i=0;i<NUM_BANDS;i++)
+    EEPROM.get(i,data32); radio.cw_dit   = data32; i += sizeof(uint32_t);
+    EEPROM.get(i,data32); radio.cw_level = data32; i += sizeof(uint32_t);
+    EEPROM.get(i,data32); radio.sidetone = data32; i += sizeof(uint32_t);
+    EEPROM.get(i,data32); radio.cw_phase = data32; i += sizeof(uint32_t);
+    EEPROM.get(i,data32); radio.spectype = data32; i += sizeof(uint32_t);
+    EEPROM.get(i,data32); radio.jnrlevel = data32; i += sizeof(uint32_t);
+    EEPROM.get(i,data32); radio.micgain  = data32; i += sizeof(uint32_t);
+    EEPROM.get(i,data32); radio.cessb = data32==1?true:false; i += sizeof(uint32_t);
+    EEPROM.get(i,data32); radio.bandwidth = data32; i += sizeof(uint32_t);
+    EEPROM.get(i,data32); radio.graph_swr = data32==1?true:false; i += sizeof(uint32_t);
+    for (uint32_t j=0;j<NUM_BANDS;j++)
     {
-      EEPROM.get((i+0xb)*sizeof(uint32_t),data32);
-      radio.level[i] = (int8_t)data32;
-      if (radio.level[i]<SPECTRUM_LEVEL_MIN || radio.level[i]>SPECTRUM_LEVEL_MAX)
+      EEPROM.get(i,data32);
+      i += sizeof(uint32_t);
+      radio.level[j] = (int8_t)data32;
+      if (radio.level[j]<SPECTRUM_LEVEL_MIN || radio.level[j]>SPECTRUM_LEVEL_MAX)
       {
-        radio.level[i] = 0;
+        radio.level[j] = 0;
       }
-      radio.slevel[i] = radio.level[i];
+      radio.slevel[j] = radio.level[j];
     }
+    EEPROM.get(i,radio.callsign);
+    i += sizeof(radio.callsign);
+    EEPROM.get(i,radio.grid);
+    radio.callsign[STATION_CALL_MAX] = '\0';
+    radio.grid[STATION_GRID_LEN] = '\0';
   }
   if (radio.cw_dit<40 || radio.cw_dit>120)
   {
@@ -1030,14 +1047,24 @@ void setup(void)
   }
   delay(250);
 
+  // make sure callsign is valid
+  if (!check_station_details())
+  {
+    enter_station_details();
+    save_settings();
+    delay(2000);
+  }
+
   // intro screen
+  lcd.setTextFont(1);
+  lcd.setTextSize(1);
   lcd.fillSprite(LCD_BLACK);
   lcd.setTextColor(LCD_WHITE,LCD_BLACK);
   lcd.setCursor(POS_VERSION_X,POS_VERSION_Y);
   lcd.print((const char*)sz_version);
   lcd.setFreeFont(&FreeSansBold18pt7b);
   lcd.setCursor(POS_CALL_X,POS_SPLASH_Y);
-  lcd.print(YOUR_CALL);
+  lcd.print((const char*)radio.callsign);
   lcd.pushSprite(0,0);
   lcd.setTextFont(1);
 
@@ -3105,7 +3132,7 @@ static void ft8_show_decoded(const uint32_t slot_calibrate_ms)
       char buf[FT8_DISPLAY_COLS + 1];
       strncpy(buf, e->text, FT8_DISPLAY_COLS);
       buf[FT8_DISPLAY_COLS] = '\0';
-      if (strstr(buf,YOUR_CALL) !=NULL)
+      if (strstr(buf,(const char*)radio.callsign) !=NULL)
       {
         lcd.setTextColor(LCD_WHITE, LCD_RED);
       }
@@ -3145,7 +3172,7 @@ static void ft8_show_decoded(const uint32_t slot_calibrate_ms)
       const uint8_t age = current_slot_low - e->slot_number_low;
       const bool is_old = (age > 4);
       const bool is_cq = strstr(buf,"CQ ") != NULL;
-      const bool is_mycall = strstr(buf,YOUR_CALL) != NULL;
+      const bool is_mycall = strstr(buf,(const char*)radio.callsign) != NULL;
 
       // Slot parity indicator prefix (1 char)
       if (is_selected) lcd.setTextColor(LCD_BLACK, LCD_GREEN);
@@ -3567,7 +3594,7 @@ static bool ft8_cq_transmit(const uint32_t slot_calibrate_ms, const ft8_state_t 
   }
 
   char msg[FTX_MAX_MESSAGE_LENGTH];
-  snprintf(msg, sizeof(msg), "CQ%s %s %s", sz_cq_type, YOUR_CALL, YOUR_GRID);
+  snprintf(msg, sizeof(msg), "CQ%s %s %s", sz_cq_type, (const char*)radio.callsign, (const char*)radio.grid);
 
   uint8_t tones[FT8_NN];
   memset(tones, 0, sizeof(tones));
@@ -3709,7 +3736,7 @@ static bool ft8_parse_direct_call(
   p = copy_token(tokens[1], sizeof(tokens[1]), p);  // their callsign
   p = copy_token(tokens[2], sizeof(tokens[2]), p);  // grid or report
 
-  if (!equals(tokens[0], YOUR_CALL)) return false;
+  if (!equals(tokens[0], (const char*)radio.callsign)) return false;
   if (tokens[1][0] == '\0')          return false;
 
   strncpy(their_call_out, tokens[1], 11);
@@ -3919,25 +3946,25 @@ static void ft8_qso_start(void)
 
     // T2 (row 1): W1XYZ VK7IAN -07 (our signal report for them)
     snprintf(ft8_qso.rows[1].text, FTX_MAX_DISPLAY_LENGTH,
-      "%s %s %s", their_call, YOUR_CALL, FT8_DEFAULT_REPORT);
+      "%s %s %s", their_call, (const char*)radio.callsign, FT8_DEFAULT_REPORT);
     ft8_qso.rows[1].is_tx = true;
     ft8_qso.rows[1].state = FT8_QSO_ROW_CURRENT;
 
     // R3 (row 2): VK7IAN W1XYZ R-09 or RR73
     snprintf(ft8_qso.rows[2].text, FTX_MAX_DISPLAY_LENGTH,
-      "%s %s R???", YOUR_CALL, their_call);
+      "%s %s R???", (const char*)radio.callsign, their_call);
     ft8_qso.rows[2].is_tx = false;
     ft8_qso.rows[2].state = FT8_QSO_ROW_PENDING;
 
     // T4 (row 3): W1XYZ VK7IAN RRR (updated when R3 known)
     snprintf(ft8_qso.rows[3].text, FTX_MAX_DISPLAY_LENGTH,
-      "%s %s RRR", their_call, YOUR_CALL);
+      "%s %s RRR", their_call, (const char*)radio.callsign);
     ft8_qso.rows[3].is_tx = true;
     ft8_qso.rows[3].state = FT8_QSO_ROW_PENDING;
 
     // R5 (row 4): VK7IAN W1XYZ 73  (exit anyway on timeout)
     snprintf(ft8_qso.rows[4].text, FTX_MAX_DISPLAY_LENGTH,
-      "%s %s 73", YOUR_CALL, their_call);
+      "%s %s 73", (const char*)radio.callsign, their_call);
     ft8_qso.rows[4].is_tx = false;
     ft8_qso.rows[4].state = FT8_QSO_ROW_PENDING;
 
@@ -3948,31 +3975,31 @@ static void ft8_qso_start(void)
     // ── Responding to CQ ──────────────────────────────────────────────
     // Row 1 TX: THEIRCALL OURCALL OURGRID
     snprintf(ft8_qso.rows[1].text, FTX_MAX_DISPLAY_LENGTH,
-      "%s %s %s", their_call, YOUR_CALL, YOUR_GRID);
+      "%s %s %s", their_call, (const char*)radio.callsign, (const char*)radio.grid);
     ft8_qso.rows[1].is_tx = true;
     ft8_qso.rows[1].state = FT8_QSO_ROW_CURRENT;
 
     // Row 2 RX: they send us a signal report
     snprintf(ft8_qso.rows[2].text, FTX_MAX_DISPLAY_LENGTH,
-      "%s %s ???", YOUR_CALL, their_call);
+      "%s %s ???", (const char*)radio.callsign, their_call);
     ft8_qso.rows[2].is_tx = false;
     ft8_qso.rows[2].state = FT8_QSO_ROW_PENDING;
 
     // Row 3 TX: THEIRCALL OURCALL R+report (filled when step 2 known)
     snprintf(ft8_qso.rows[3].text, FTX_MAX_DISPLAY_LENGTH,
-      "%s %s R???", their_call, YOUR_CALL);
+      "%s %s R???", their_call, (const char*)radio.callsign);
     ft8_qso.rows[3].is_tx = true;
     ft8_qso.rows[3].state = FT8_QSO_ROW_PENDING;
 
     // Row 4 RX: their RR73
     snprintf(ft8_qso.rows[4].text, FTX_MAX_DISPLAY_LENGTH,
-      "%s %s RR73", YOUR_CALL, their_call);
+      "%s %s RR73", (const char*)radio.callsign, their_call);
     ft8_qso.rows[4].is_tx = false;
     ft8_qso.rows[4].state = FT8_QSO_ROW_PENDING;
 
     // Row 5 TX: our 73
     snprintf(ft8_qso.rows[5].text, FTX_MAX_DISPLAY_LENGTH,
-      "%s %s 73", their_call, YOUR_CALL);
+      "%s %s 73", their_call, (const char*)radio.callsign);
     ft8_qso.rows[5].is_tx = true;
     ft8_qso.rows[5].state = FT8_QSO_ROW_PENDING;
 
@@ -4056,7 +4083,7 @@ static void ft8_qso_check_rx(
     if (sscanf(lines[i], "%f %f %f %34[^\n]", &snr, &dt, &freq, msg) < 4) continue;
 
     if (!strstr(msg, ft8_qso.their_call)) continue;
-    if (!strstr(msg, YOUR_CALL)) continue;
+    if (!strstr(msg, (const char*)radio.callsign)) continue;
 
     const char* last_sp = strrchr(msg, ' ');
     const char* token = last_sp ? last_sp + 1 : msg;
@@ -4075,10 +4102,10 @@ static void ft8_qso_check_rx(
       // Update T4 message based on what we received
       if (is_r_report)
         snprintf(ft8_qso.rows[3].text, FTX_MAX_DISPLAY_LENGTH,
-          "%s %s RRR", ft8_qso.their_call, YOUR_CALL);
+          "%s %s RRR", ft8_qso.their_call, (const char*)radio.callsign);
       else
         snprintf(ft8_qso.rows[3].text, FTX_MAX_DISPLAY_LENGTH,
-          "%s %s 73", ft8_qso.their_call, YOUR_CALL);
+          "%s %s 73", ft8_qso.their_call, (const char*)radio.callsign);
     }
     else if (!ft8_qso.is_direct && step == 4)
     {
@@ -4101,7 +4128,7 @@ static void ft8_qso_check_rx(
         "R%s", last_sp + 1);
       snprintf(ft8_qso.rows[3].text, FTX_MAX_DISPLAY_LENGTH,
         "%s %s %s",
-        ft8_qso.their_call, YOUR_CALL, ft8_qso.r_report);
+        ft8_qso.their_call, (const char*)radio.callsign, ft8_qso.r_report);
     }
 
     // Advance
@@ -4174,7 +4201,7 @@ static bool ft8_qso_detect_poach(
     char msg[FTX_MAX_MESSAGE_LENGTH] = "";
     if (sscanf(lines[i], "%f %f %f %34[^\n]", &snr, &dt, &freq, msg) < 4) continue;
     if (strncmp(msg, "CQ", 2) == 0) continue;
-    if (strstr(msg, YOUR_CALL)) continue; // that's our reply
+    if (strstr(msg, (const char*)radio.callsign)) continue; // that's our reply
     if (!strstr(msg, ft8_qso.their_call)) continue;
 
     char to[16] = "";
@@ -4324,6 +4351,13 @@ static const bool do_ft8(const bool cal_reset = false)
   static uint32_t progress = 0;
   static ft8_state_t ft8_state = FT8_STATE_WAITING;
   static bool ft8_hash_init = false;
+
+  // make sure call and grid are set
+  if (!check_station_details())
+  {
+    set_popup("No callsign","ERROR:");
+    return false;
+  }
 
   // reset calibration
   if (cal_reset)
@@ -4789,6 +4823,42 @@ static void set_notch_filter(void)
   }
 }
 
+static void about_reboot(void)
+{
+  constexpr uint32_t size = 2;
+  static const char *s = "Rebooting...";
+  const int16_t w = (int16_t)(6 * size * (int)strlen(s));
+  display_clear();
+  lcd.setTextFont(1);
+  ENTRY_LCD.setTextSize(size);
+  ENTRY_LCD.setTextColor(LCD_WHITE);
+  ENTRY_LCD.setCursor((LCD_WIDTH - w) / 2, 50);
+  ENTRY_LCD.print(s);
+  display_refresh();
+  watchdog_reboot(0, 0, 1000);
+  for (;;)
+  {
+    tight_loop_contents();
+  }
+}
+
+static void reset_callsign(void)
+{
+  // clear the callsign
+  // get new callsign on next boot
+  memset((char*)radio.callsign,0,sizeof(radio.callsign));
+  memset((char*)radio.grid,0,sizeof(radio.grid));
+  save_settings();
+}
+
+static void reboot_callsign(void)
+{
+  // clear and reboot to get
+  // new callsign now
+  reset_callsign();
+  about_reboot();
+}
+
 /*
  * general UI processing
  */
@@ -4940,7 +5010,10 @@ void loop(void)
         case OPTION_FT8_CQ_SOTA:     radio.ft8_cq = FT8_CQ_SOTA;                     break;
         case OPTION_FT8_CALSET:      do_ft8(true);                                   break;
         case OPTION_FT8_AUTOCAL:     radio.ft8_autocal = true;                       break;
+        case OPTION_CALL_RESET:      reset_callsign();                               break;
+        case OPTION_CALL_REBOOT:     reboot_callsign();                              break;
         case OPTION_VERSION:         set_popup(sz_version,"VERSION:");               break;
+        case OPTION_REBOOT:          about_reboot();                                 break;
         case OPTION_EXIT:            radio.menu_active = false;                      break;
       }
 
