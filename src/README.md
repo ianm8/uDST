@@ -44,3 +44,6 @@ https://github.com/earlephilhower/arduino-pico
  * 2.5.250 FT8 auto calibration
  * 2.6.250 FT8 S9 at 80%
  * 2.7.250 fix comments
+ * 2.8.250 move mode 2nd menu
+ * 2.9.250 reboot option
+ * 3.0.250 user set callsign
