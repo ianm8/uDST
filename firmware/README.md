@@ -11,9 +11,9 @@ Use openFPGALoader to program the FPGA
 
 If successful, the scrolling pattern should appear on the 6 LEDs.
 
-## Pico UFT2
+## Pico UF2
 
 * Put the Pico 2 into bootloader mode (press the *Boot* button while plugging in the USB cable).
-* Copy the UFT2 file into the directory that pops up.
+* Copy the UF2 file into the directory that pops up.
 
 If successful, the LED should flash the error code for FPGA missing.
