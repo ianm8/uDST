@@ -4,7 +4,7 @@
 Optional but highly recommended, use a FT3MHUPM24.0-T1 24MHz TCXO to replace the 27MHz oscillator on the BRS-100.
 
 ## Resistors
-All SM resistors are 1% tolerance, 1206 thick film of at least 125mW except R59 which should be at least 2.4W.
+All SM resistors are 1% tolerance, 1206 thick film of at least 250mW except R59 which should be at least 2.4W.
 
 ## Capacitors
 All SM capacitors are 1206 NP0 or C0G except for the 22uF (25V) and 100uF capacitors. Try to get capacitors of at least 100V for the low-pass filters. Because the audio amp is powered from it's own 5V regulator, the 100uF cap could probably be substituted with a 22uF (but I have not tried it).
