@@ -10,7 +10,7 @@ All SM resistors are 1% tolerance, 1206 thick film of at least 250mW except R59 
 All SM capacitors are 1206 NP0 or C0G except for the 22uF (25V) and 100uF capacitors. Try to get capacitors of at least 100V for the low-pass filters. Because the audio amp is powered from it's own 5V regulator, the 100uF cap could probably be substituted with a 22uF (but I have not tried it).
 
 ## Inductors
-All SM inductors are 1206 (or 0806) for as high SRF as possible (ie, greater than 30MHz), except for L20 and L26 which has a specific part number (1206F-100K-01).
+All SM inductors are 1206 (or 0805) for as high SRF as possible (ie, greater than 30MHz), except for L20 and L26 which has a specific part number (1206F-100K-01).
 
 ## Transformers
 T3 and T4 can be SHO-301 if you can get them, they work well, I have tested them. T5 can be T-622-KK81+ from Mini Circuits, I have tried it and it works well.
