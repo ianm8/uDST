@@ -11,6 +11,8 @@ A direct sampling SDR QRP transceiver.
  * Noise reduction
  * Noise blanker
  * Notch filter
+ * MDS -134dBm (calculated)
+ * ADC clipping -18dBm (S9+55dB, inside analog bandpass)
 
 ## Some Videos
 * [uDST Part 1](https://youtu.be/HgmR2FVoKSU) (Introduction, block diagram)
