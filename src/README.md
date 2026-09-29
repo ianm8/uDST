@@ -47,3 +47,7 @@ https://github.com/earlephilhower/arduino-pico
  * 2.8.250 move mode 2nd menu
  * 2.9.250 reboot option
  * 3.0.250 user set callsign
+ * 3.1.250 copyright
+ * 3.2.250 spectrum overflow
+ * 3.3.250 overflow indicator
+ * 3.4.250 float FFT
