@@ -1,5 +1,5 @@
 /*
- * uDST Version 3.0.250
+ * uDST Version 3.4.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -54,6 +54,10 @@
  *  2.8.250 move mode 2nd menu
  *  2.9.250 reboot option
  *  3.0.250 user set callsign
+ *  3.1.250 copyright
+ *  3.2.250 spectrum overflow
+ *  3.3.250 overflow indicator
+ *  3.4.250 float FFT
  */
 
 //#define DEBUGGING_SKIP
@@ -90,7 +94,11 @@
 #include "ArialBold16pt7b.h"
 #include "stackpaint.h"
 
-#define VERSION_STRING "  V3.0."
+// uncomment when dev/debugging
+//#define USER_CALL "VK7IAN"
+//#define USER_GRID "QE36"
+
+#define VERSION_STRING "  V3.4."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u
@@ -192,6 +200,8 @@
 #define POS_CPU_Y          30
 #define POS_JNR_X         199
 #define POS_JNR_Y          52
+#define POS_OVERFLOW_X    199
+#define POS_OVERFLOW_Y     62
 #define POS_DEBUG1_X       10
 #define POS_DEBUG1_Y      100
 #define POS_DEBUG2_X      180
@@ -432,6 +442,7 @@ volatile static bool adj_spectrum_level = false;
 volatile static bool adj_notch_filter = false;
 volatile static bool vox_triggered = false;
 volatile static bool vox_mic_ready = false;
+volatile static bool overflow = false;
 volatile static char cw_decode_buf[32] = "";
 volatile static char sz_version[16] = "";
 volatile static uint32_t wp = 0;
@@ -1050,7 +1061,14 @@ void setup(void)
   // make sure callsign is valid
   if (!check_station_details())
   {
+#ifdef USER_CALL
+    memset((char*)radio.callsign,0,sizeof(radio.callsign));
+    memset((char*)radio.grid,0,sizeof(radio.grid));
+    strncpy((char*)radio.callsign,USER_CALL,sizeof(radio.callsign)-1);
+    strncpy((char*)radio.grid,USER_GRID,sizeof(radio.grid)-1);
+#else
     enter_station_details();
+#endif
     save_settings();
     delay(2000);
   }
@@ -1500,6 +1518,22 @@ static void show_cpu_usage(void)
   {
     lcd.print("%");
   }
+}
+
+static void show_overflow(void)
+{
+  static uint32_t expiry = 0;
+  if (overflow)
+  {
+    overflow = false;
+    expiry = millis() + 1000;
+  }
+  if (millis() > expiry) return;
+  lcd.fillRect(POS_OVERFLOW_X-5,POS_OVERFLOW_Y-5,45,25,LCD_DARKRED);
+  lcd.setTextSize(2);
+  lcd.setTextColor(LCD_WHITE);
+  lcd.setCursor(POS_OVERFLOW_X,POS_OVERFLOW_Y);
+  lcd.print("OVR");
 }
 
 static void show_notch(void)
@@ -2125,6 +2159,7 @@ static void update_display(const uint32_t signal_level = 0u)
   show_attenuator();  
   show_jnr();
   show_spectrum();
+  show_overflow();
   show_cw_decode();
   show_menu();
   show_popup();
@@ -2430,6 +2465,15 @@ void __not_in_flash_func(loop1)(void)
       }
       const int16_t ii = (int16_t)(rx_sample>>16);
       const int16_t qq = (int16_t)(rx_sample & 0xffff);
+      static constexpr uint32_t OVERFLOW_THRESHOLD = 32000;
+      if (abs(ii)>OVERFLOW_THRESHOLD)
+      {
+        overflow = true;
+      }
+      if (abs(qq)>OVERFLOW_THRESHOLD)
+      {
+        overflow = true;
+      }
 #ifdef DEBUG_DDC_SAMPLE
       static uint32_t debug_count = 0;
       static uint32_t debug_abs_1 = 0;
@@ -5014,6 +5058,7 @@ void loop(void)
         case OPTION_CALL_REBOOT:     reboot_callsign();                              break;
         case OPTION_VERSION:         set_popup(sz_version,"VERSION:");               break;
         case OPTION_REBOOT:          about_reboot();                                 break;
+        case OPTION_ABT:             set_popup("Copyright 2026","THANKS:");          break;
         case OPTION_EXIT:            radio.menu_active = false;                      break;
       }
 

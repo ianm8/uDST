@@ -158,6 +158,7 @@ enum option_value_t
   OPTION_CALL_REBOOT,
   OPTION_VERSION,
   OPTION_REBOOT,
+  OPTION_ABT,
   OPTION_NONE,
   OPTION_EXIT
 };
@@ -502,12 +503,12 @@ menu_options[NUM_MENU_ITEMS] =
   {
     MENU_ABOUT,
     "About",
-    3U,
+    4U,
     {
       {OPTION_VERSION,"Version"},
       {OPTION_REBOOT,"Reboot"},
+      {OPTION_ABT,"VK7IAN"},
       {OPTION_EXIT,"Exit"},
-      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
