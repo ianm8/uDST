@@ -1,5 +1,5 @@
 /*
- * uDST Version 3.4.250
+ * uDST Version 3.5.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -58,6 +58,7 @@
  *  3.2.250 spectrum overflow
  *  3.3.250 overflow indicator
  *  3.4.250 float FFT
+ *  3.5.250 FPGA version 1.1
  */
 
 //#define DEBUGGING_SKIP
@@ -98,7 +99,7 @@
 //#define USER_CALL "VK7IAN"
 //#define USER_GRID "QE36"
 
-#define VERSION_STRING "  V3.4."
+#define VERSION_STRING "  V3.5."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u
