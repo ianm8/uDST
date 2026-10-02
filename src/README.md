@@ -51,3 +51,4 @@ https://github.com/earlephilhower/arduino-pico
  * 3.2.250 spectrum overflow
  * 3.3.250 overflow indicator
  * 3.4.250 float FFT
+ * 3.5.250 FPGA version 1.1
