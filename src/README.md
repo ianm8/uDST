@@ -52,3 +52,6 @@ https://github.com/earlephilhower/arduino-pico
  * 3.3.250 overflow indicator
  * 3.4.250 float FFT
  * 3.5.250 FPGA version 1.1
+ * 3.6.250 improve DC gate
+ * 3.7.250 overflow warning
+ * 3.8.250 FT8 auto default
