@@ -1,5 +1,5 @@
 /*
- * uDST Version 3.5.250
+ * uDST Version 3.8.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -59,6 +59,9 @@
  *  3.3.250 overflow indicator
  *  3.4.250 float FFT
  *  3.5.250 FPGA version 1.1
+ *  3.6.250 improve DC gate
+ *  3.7.250 overflow warning
+ *  3.8.250 FT8 auto default
  */
 
 //#define DEBUGGING_SKIP
@@ -99,7 +102,7 @@
 //#define USER_CALL "VK7IAN"
 //#define USER_GRID "QE36"
 
-#define VERSION_STRING "  V3.5."
+#define VERSION_STRING "  V3.8."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u
@@ -359,7 +362,7 @@ radio =
   true,
   false,
   false,
-  false,
+  true,
   {0,0,0,0,0,0,0,0,0},
   {0,0,0,0,0,0,0,0,0},
   "",
@@ -427,6 +430,7 @@ auto_init_mutex(cw_decode_mutex);
 
 volatile static int32_t debug_value_1 = 0;
 volatile static int32_t debug_value_2 = 0;
+volatile static uint32_t overflow = 0;
 volatile static uint32_t audio_pwm = 0;
 volatile static uint32_t adc_sample_p = 0;
 volatile static uint32_t ft8_sample_p = 0;
@@ -443,7 +447,6 @@ volatile static bool adj_spectrum_level = false;
 volatile static bool adj_notch_filter = false;
 volatile static bool vox_triggered = false;
 volatile static bool vox_mic_ready = false;
-volatile static bool overflow = false;
 volatile static char cw_decode_buf[32] = "";
 volatile static char sz_version[16] = "";
 volatile static uint32_t wp = 0;
@@ -1524,13 +1527,14 @@ static void show_cpu_usage(void)
 static void show_overflow(void)
 {
   static uint32_t expiry = 0;
-  if (overflow)
+  const bool warning = (overflow == 1);
+  if (overflow != 0)
   {
-    overflow = false;
+    overflow = 0;
     expiry = millis() + 1000;
   }
   if (millis() > expiry) return;
-  lcd.fillRect(POS_OVERFLOW_X-5,POS_OVERFLOW_Y-5,45,25,LCD_DARKRED);
+  lcd.fillRect(POS_OVERFLOW_X-5,POS_OVERFLOW_Y-5,45,25,warning?LCD_GREEN:LCD_DARKRED);
   lcd.setTextSize(2);
   lcd.setTextColor(LCD_WHITE);
   lcd.setCursor(POS_OVERFLOW_X,POS_OVERFLOW_Y);
@@ -2466,14 +2470,23 @@ void __not_in_flash_func(loop1)(void)
       }
       const int16_t ii = (int16_t)(rx_sample>>16);
       const int16_t qq = (int16_t)(rx_sample & 0xffff);
+      static constexpr uint32_t WARNING_THRESHOLD = 16000;
       static constexpr uint32_t OVERFLOW_THRESHOLD = 32000;
       if (abs(ii)>OVERFLOW_THRESHOLD)
       {
-        overflow = true;
+        overflow = 2;
       }
-      if (abs(qq)>OVERFLOW_THRESHOLD)
+      else if (abs(qq)>OVERFLOW_THRESHOLD)
       {
-        overflow = true;
+        overflow = 2;
+      }
+      else if (abs(ii)>WARNING_THRESHOLD)
+      {
+        overflow = 1;
+      }
+      else if (abs(qq)>WARNING_THRESHOLD)
+      {
+        overflow = 1;
       }
 #ifdef DEBUG_DDC_SAMPLE
       static uint32_t debug_count = 0;

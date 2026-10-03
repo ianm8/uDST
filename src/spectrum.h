@@ -4479,10 +4479,16 @@ namespace spectrum
     // 1/64th of the way toward each block's mean. 64 blocks at 31250/1024 =
     // 30.5 blocks/s is ~2.1 s, i.e. a ~0.5 Hz corner. Anything tuned further
     // than that off centre is rejected as AC no matter how strong it is.
-    static constexpr float DC_TC = 1.0f / 64.0f;
-    static float dc1_est = 0.0f;
-    static float dc2_est = 0.0f;
-    static bool  dc_primed = false;
+    static constexpr float    DC_TC     = 1.0f / 64.0f;
+    static constexpr float    dev_limit = 1.0f;   // 1 count
+    static constexpr float    dc_clamp  = 4.0f;   // largest believable bias
+    static constexpr uint32_t DC_REACQ  = 30;     // blocks, ~1 s
+    static float    dc1_est = 0.0f;
+    static float    dc2_est = 0.0f;
+    static float    dc1_sum = 0.0f;
+    static float    dc2_sum = 0.0f;
+    static uint32_t dc_count = 0;
+    static bool     dc_primed = false;
 
     int32_t dc1 = 0;
     int32_t dc2 = 0;
@@ -4491,39 +4497,53 @@ namespace spectrum
       dc1 += ii[i];
       dc2 += qq[i];
     }
-
     const float mean1 = (float)dc1 * (1.0f / (float)FFT_N);
     const float mean2 = (float)dc2 * (1.0f / (float)FFT_N);
-
     if (!dc_primed)
     {
-      // seed from the first block so we don't spend 2 s converging from zero
       dc1_est = mean1;
       dc2_est = mean2;
       dc_primed = true;
     }
     else
     {
-      // Gate on deviation from the estimate, not on absolute level: a real
-      // carrier near centre shows up as a large excursion, hardware bias
-      // doesn't.
-      static constexpr float dev_limit = 1.0f;   // 1 count
+      // normal tracking: gate on deviation from the estimate
       const float dev1 = mean1 - dc1_est;
       const float dev2 = mean2 - dc2_est;
-
-      if (dev1 <= dev_limit && dev1 >= -dev_limit &&
-          dev2 <= dev_limit && dev2 >= -dev_limit)
+      if (fabsf(dev1) <= dev_limit && fabsf(dev2) <= dev_limit)
       {
         dc1_est += dev1 * DC_TC;
         dc2_est += dev2 * DC_TC;
       }
-      // else: signal at centre, hold the estimate (and keep subtracting it,
-      // so a genuine carrier on centre still reads full scale on the display)
-    }
 
-    // The estimate is a hardware bias, so it should be well under 1 count.
-    // Clamp anyway, as a sanity bound against a runaway gate.
-    static constexpr float dc_clamp = 4.0f;
+      // re-acquire: if the centre has been quiet (mean small enough to be
+      // bias, not a carrier) for DC_REACQ blocks in a row and the average
+      // disagrees with the estimate, the estimate is stale. Replace it.
+      if (fabsf(mean1) <= dc_clamp && fabsf(mean2) <= dc_clamp)
+      {
+        dc1_sum += mean1;
+        dc2_sum += mean2;
+        if (++dc_count >= DC_REACQ)
+        {
+          const float avg1 = dc1_sum * (1.0f / (float)DC_REACQ);
+          const float avg2 = dc2_sum * (1.0f / (float)DC_REACQ);
+          if (fabsf(avg1 - dc1_est) > dev_limit || fabsf(avg2 - dc2_est) > dev_limit)
+          {
+            dc1_est = avg1;
+            dc2_est = avg2;
+          }
+          dc1_sum = 0.0f;
+          dc2_sum = 0.0f;
+          dc_count = 0;
+        }
+      }
+      else
+      {
+        dc1_sum = 0.0f;
+        dc2_sum = 0.0f;
+        dc_count = 0;
+      }
+    }
     dc1_est = dc1_est >  dc_clamp ?  dc_clamp : (dc1_est < -dc_clamp ? -dc_clamp : dc1_est);
     dc2_est = dc2_est >  dc_clamp ?  dc_clamp : (dc2_est < -dc_clamp ? -dc_clamp : dc2_est);
 
