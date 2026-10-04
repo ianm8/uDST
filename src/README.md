@@ -55,3 +55,4 @@ https://github.com/earlephilhower/arduino-pico
  * 3.6.250 improve DC gate
  * 3.7.250 overflow warning
  * 3.8.250 FT8 auto default
+ * 3.9.250 fix overflow warning
