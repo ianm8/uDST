@@ -1,5 +1,5 @@
 /*
- * uDST Version 3.8.250
+ * uDST Version 3.9.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -11,7 +11,7 @@
  *
  * Filter Design
  *
- *  https://www.arc.id.au/FilterDesign.html
+ *  https://github.com/ianm8/FIR-Designer
  *
  * Build:
  *  Pi Pico 2
@@ -62,6 +62,7 @@
  *  3.6.250 improve DC gate
  *  3.7.250 overflow warning
  *  3.8.250 FT8 auto default
+ *  3.9.250 fix overflow warning
  */
 
 //#define DEBUGGING_SKIP
@@ -102,7 +103,7 @@
 //#define USER_CALL "VK7IAN"
 //#define USER_GRID "QE36"
 
-#define VERSION_STRING "  V3.8."
+#define VERSION_STRING "  V3.9."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u
@@ -1526,15 +1527,32 @@ static void show_cpu_usage(void)
 
 static void show_overflow(void)
 {
-  static uint32_t expiry = 0;
-  const bool warning = (overflow == 1);
-  if (overflow != 0)
+  static constexpr uint32_t HOLD_MS = 1000;
+  static uint32_t red_start = 0;
+  static uint32_t green_start = 0;
+  static bool red_on = false;
+  static bool green_on = false;
+
+  const uint32_t now = millis();
+  const uint8_t level = overflow;
+  overflow = 0;
+
+  if (level == 2)
   {
-    overflow = 0;
-    expiry = millis() + 1000;
+    red_on = true;
+    red_start = now;
   }
-  if (millis() > expiry) return;
-  lcd.fillRect(POS_OVERFLOW_X-5,POS_OVERFLOW_Y-5,45,25,warning?LCD_GREEN:LCD_DARKRED);
+  else if (level == 1)
+  {
+    green_on = true;
+    green_start = now;
+  }
+
+  if (red_on && (now - red_start) >= HOLD_MS) red_on = false;
+  if (green_on && (now - green_start) >= HOLD_MS) green_on = false;
+  if (!red_on && !green_on) return;
+
+  lcd.fillRect(POS_OVERFLOW_X-5,POS_OVERFLOW_Y-5,45,25,red_on?LCD_DARKRED:LCD_GREEN);
   lcd.setTextSize(2);
   lcd.setTextColor(LCD_WHITE);
   lcd.setCursor(POS_OVERFLOW_X,POS_OVERFLOW_Y);
@@ -2472,19 +2490,14 @@ void __not_in_flash_func(loop1)(void)
       const int16_t qq = (int16_t)(rx_sample & 0xffff);
       static constexpr uint32_t WARNING_THRESHOLD = 16000;
       static constexpr uint32_t OVERFLOW_THRESHOLD = 32000;
-      if (abs(ii)>OVERFLOW_THRESHOLD)
+      const uint32_t pk_i = (uint32_t)abs(ii);
+      const uint32_t pk_q = (uint32_t)abs(qq);
+      const uint32_t pk = (pk_i > pk_q) ? pk_i : pk_q;
+      if (pk > OVERFLOW_THRESHOLD)
       {
         overflow = 2;
       }
-      else if (abs(qq)>OVERFLOW_THRESHOLD)
-      {
-        overflow = 2;
-      }
-      else if (abs(ii)>WARNING_THRESHOLD)
-      {
-        overflow = 1;
-      }
-      else if (abs(qq)>WARNING_THRESHOLD)
+      else if (pk > WARNING_THRESHOLD && overflow < 2)
       {
         overflow = 1;
       }
