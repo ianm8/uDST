@@ -1,5 +1,5 @@
 /*
- * uDST Version 3.9.250
+ * uDST Version 4.1.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -63,6 +63,8 @@
  *  3.7.250 overflow warning
  *  3.8.250 FT8 auto default
  *  3.9.250 fix overflow warning
+ *  4.0.250 update all-pass
+ *  4.1.250 CW shaping improved
  */
 
 //#define DEBUGGING_SKIP
@@ -103,7 +105,7 @@
 //#define USER_CALL "VK7IAN"
 //#define USER_GRID "QE36"
 
-#define VERSION_STRING "  V3.9."
+#define VERSION_STRING "  V4.1."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u

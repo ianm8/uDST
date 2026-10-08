@@ -110,50 +110,65 @@ namespace FILTER
     return (y1 = s);
   }
 
+  // 4-section all-pass pair, 150-3000 Hz @ 31250 Hz
+  // phase(fap1f) - phase(fap2f) = -90 degrees, within 0.030 degrees
+  // worst-case opposite-sideband suppression 71.7 dB
   static const float __not_in_flash_func(fap1f)(const float s)
   {
-    // all pass 84 @ 31250
-    // all pass 607 @ 31250
-    // all pass 2539 @ 31250
-    static const float k1 = 0.98325f;
-    static const float k2 = 0.88497f;
-    static const float k3 = 0.59331f;
+    // all pass 41.9 @ 31250
+    // all pass 280 @ 31250
+    // all pass 908 @ 31250
+    // all pass 3224 @ 31250
+    static const float k1 = 0.9916065f;
+    static const float k2 = 0.9453122f;
+    static const float k3 = 0.8322739f;
+    static const float k4 = 0.4970640f;
     static float x1 = 0.0f;
     static float y1 = 0.0f;
     static float x2 = 0.0f;
     static float y2 = 0.0f;
     static float x3 = 0.0f;
     static float y3 = 0.0f;
+    static float x4 = 0.0f;
+    static float y4 = 0.0f;
     y1 = (k1 * (s + y1)) - x1;
     x1 = s;
     y2 = (k2 * (y1 + y2)) - x2;
     x2 = y1;
     y3 = (k3 * (y2 + y3)) - x3;
     x3 = y2;
-    return y3;
+    y4 = (k4 * (y3 + y4)) - x4;
+    x4 = y3;
+    return y4;
   }
 
   static const float __not_in_flash_func(fap2f)(const float s)
   {
-    // all pass 8628 @ 31250
-    // all pass 1200 @ 31250
-    // all pass 287 @ 31250
-    static const float k1 = 0.07102f;
-    static const float k2 = 0.78470f;
-    static const float k3 = 0.94391f;
+    // all pass 139 @ 31250
+    // all pass 509 @ 31250
+    // all pass 1645 @ 31250
+    // all pass 8345 @ 31250
+    static const float k1 = 0.9724555f;
+    static const float k2 = 0.9024980f;
+    static const float k3 = 0.7139754f;
+    static const float k4 = -0.0535530f;
     static float x1 = 0.0f;
     static float y1 = 0.0f;
     static float x2 = 0.0f;
     static float y2 = 0.0f;
     static float x3 = 0.0f;
     static float y3 = 0.0f;
+    static float x4 = 0.0f;
+    static float y4 = 0.0f;
     y1 = (k1 * (s + y1)) - x1;
     x1 = s;
     y2 = (k2 * (y1 + y2)) - x2;
     x2 = y1;
     y3 = (k3 * (y2 + y3)) - x3;
     x3 = y2;
-    return y3;
+    y4 = (k4 * (y3 + y4)) - x4;
+    x4 = y3;
+    return y4;
   }
 
   static const float __not_in_flash_func(lpf_2200f_rx)(const float sample)
