@@ -56,3 +56,5 @@ https://github.com/earlephilhower/arduino-pico
  * 3.7.250 overflow warning
  * 3.8.250 FT8 auto default
  * 3.9.250 fix overflow warning
+ * 4.0.250 update all-pass
+ * 4.1.250 CW shaping improved
