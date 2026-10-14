@@ -15,6 +15,9 @@ All SM inductors are 1206 (or 0805) for as high SRF as possible (ie, greater tha
 ## Transformers
 T3 and T4 are 6 turns bifilar wound on FT50-43 with 0.63mm ECW. Alternatively they can be SHO-301 if you can get them, they work well, I have tested them. T5 can be T-622-KK81+ from Mini Circuits, I have tried it and it works well.
 
+## Windings
+I used 0.5mm ECW for winding the toroids in the LPFs and the secondaries of T1 and T2. The primary of T1 and T2 is 0.8mm tinned copper wire.
+
 # PA Bias Adjustment
 1. Make sure you have a dummy load connected
 2. Set the bias trimpots to mid position
