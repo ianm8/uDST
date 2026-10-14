@@ -11,10 +11,10 @@ A direct sampling SDR QRP transceiver.
  * Noise reduction
  * Noise blanker
  * Notch filter
- * MDS -132dBm (calculated)
+ * MDS -132dBm, 500Hz (calculated)
  * ADC clipping -18dBm (S9+55dB, inside analog bandpass)
  * RX current 400ma
- * TX current 1.6A max
+ * TX current 2.0A max
 
 ## Some Videos
 * [uDST Part 1](https://youtu.be/HgmR2FVoKSU) (Introduction, block diagram)
