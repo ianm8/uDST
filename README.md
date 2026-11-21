@@ -2,7 +2,7 @@
 A direct sampling SDR QRP transceiver.
 
 ## Some Specifications
- * SSB, CW, FT8, Other digital modes using vox
+ * SSB, CW, FM, FT8, Other digital modes using VOX
  * CESSB
  * 80m - 10m, nominally 5W
  ** (typically 6W - 10W)
