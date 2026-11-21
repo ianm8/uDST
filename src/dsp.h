@@ -94,23 +94,47 @@ namespace DSP
 
   static void __not_in_flash_func(noise_blanker)(float &I, float &Q, const uint8_t level)
   {
-    // Wideband detection with pulse-width qualification.
+    // Impulse ("pop") blanker working on the 31.25 kHz I/Q, before any
+    // narrow filtering.
     //
-    // Raw (unfiltered) I/Q amplitude is compared against a slow envelope
-    // average. Over-threshold runs no longer than MAX_BLANK_RUN samples are
-    // qualified as impulses and removed by linear interpolation across the
-    // event (plus GUARD_PRE samples of pre-ring) inside a delay line.
-    // Longer runs are declared signal (e.g. voice peaks of a nearby strong
-    // station) and pass untouched while the envelope average adapts to them.
+    // Small events are blanked exactly as the original blanker did:
+    // GUARD_PRE samples before + the samples over the threshold. Most
+    // triggers at levels 3-5 are noise peaks and voice transients, so this
+    // keeps the damage to signals the same as before.
     //
-    // Adds NB_LEN samples (64 / 31250 = ~2 ms) of RX latency while enabled;
-    // zero latency when off. FILTER::lpf_nb1/lpf_nb2 are no longer needed.
+    // Big pops get more. By the time a fast pop reaches here, the DDC's
+    // 252-tap linear-phase FIR has spread it into a burst that rings on BOTH
+    // sides of its peak, falling only ~2.2 dB per sample:
+    //
+    //   offset (samples)  0    +/-1   +/-2   +/-4   +/-6   +/-10   +/-14
+    //   level   (dB)      0    -2.9  -11.6  -19.2  -24.1  -32.6   -37
+    //
+    // Blanking only the samples over the threshold leaves that ringing, which
+    // still clicks. So a pop more than BIG_POP_DB over the threshold also
+    // gets 'extra' samples blanked on each side, one per 2.2 dB it rose above
+    // that, enough for the ringing to decay back to the threshold:
+    //
+    //   GUARD_PRE + extra  |  pop  |  extra
+    //
+    // States:
+    //   NB_IDLE    watching; average tracks the signal
+    //   NB_EVENT   amplitude above threshold, peak recorded
+    //   NB_POST    big pop over; waiting 'extra' samples for its trailing
+    //              ringing (a new pop inside this window is merged)
+    //   NB_SIGNAL  ran longer than MAX_BLANK_RUN: a real signal (voice peak,
+    //              nearby station), passed untouched while the average adapts
+    //
+    // Delay: NB_LEN samples (64 / 31250 = ~2 ms) while enabled, none when off.
 
-    static constexpr uint32_t NB_LEN = 64u;          // power of two, >= MAX_BLANK_RUN + GUARD_PRE + 2
-    static constexpr uint32_t NB_MASK = NB_LEN - 1u; // buffer index control
-    static constexpr uint32_t MAX_BLANK_RUN = 32u;   // ~1ms at 31250 Hz; longer = signal, not impulse
-    static constexpr uint32_t GUARD_PRE = 2u;        // pre-ring guard (DDC FIR smears impulses slightly)
-    static constexpr float alpha = 0.002f;           // ~16ms at 31250 Hz
+    static constexpr uint32_t NB_LEN = 64u;          // delay line, power of two
+    static constexpr uint32_t NB_MASK = NB_LEN - 1u;
+    static constexpr uint32_t MAX_BLANK_RUN = 32u;   // ~1 ms: longer = signal, not a pop
+    static constexpr uint32_t GUARD_PRE = 2u;        // always blanked before an event (as before)
+    static constexpr float BIG_POP_DB = 6.0f;        // pops this far over the threshold get extra guard
+    static constexpr uint32_t GUARD_EXTRA_MAX = 12u; // extra samples each side, biggest pops (~380 us)
+    static constexpr float RING_DB_PER_SAMPLE = 2.2f;// DDC FIR ringing decay (measured)
+    static constexpr float alpha = 0.002f;           // average, ~16 ms at 31250 Hz
+    static_assert(GUARD_PRE + 2u*GUARD_EXTRA_MAX + MAX_BLANK_RUN <= NB_LEN - 2u, "blank window must fit in the delay line");
 
     // thresholds, number of times greater than
     // average to trigger a blanking event
@@ -124,15 +148,20 @@ namespace DSP
       2.0f  // level 5 — maximum blanking
     };
 
+    enum nb_state_t { NB_IDLE, NB_EVENT, NB_POST, NB_SIGNAL };
     static struct
     {
       float bufI[NB_LEN];
       float bufQ[NB_LEN];
       float avg_amp;
-      uint32_t w;   // delay line write index
-      uint32_t run; // length of current over-threshold run
+      float peak;       // largest amplitude in the current event
+      uint32_t w;       // delay line write index
+      uint32_t run;     // samples in the event
+      uint32_t post;    // samples since the event ended
+      uint32_t extra;   // extra guard for this event, each side (0 for small pops)
+      nb_state_t state;
       uint32_t active;
-    } s = {0};
+    } s = {};
 
     if ((level == 0u) || (level > 5u))
     {
@@ -151,52 +180,126 @@ namespace DSP
       s.avg_amp = 0.01f;
       s.w = 0u;
       s.run = 0u;
-      s.active  = 1u;
+      s.post = 0u;
+      s.state = NB_IDLE;
+      s.active = 1u;
     }
 
     // wideband instantaneous amplitude (fast L1 estimate)
     const float amp = fabsf(I) + fabsf(Q);
+    const float on  = threshold * s.avg_amp;   // event while above this
 
-    if (amp > threshold * s.avg_amp)
+    // replace the last 'gap' stored samples by a straight line from the
+    // last good sample before them to the current (good) sample
+    auto blank = [&](const uint32_t gap)
     {
-      if (s.run <= MAX_BLANK_RUN)
+      const uint32_t ia = (s.w - gap - 1u) & NB_MASK;  // last good sample
+      const float aI = s.bufI[ia];
+      const float aQ = s.bufQ[ia];
+      const float stepI = (I - aI) / (float)(gap + 1u);
+      const float stepQ = (Q - aQ) / (float)(gap + 1u);
+      for (uint32_t p = 1u; p <= gap; p++)
       {
-        s.run++;   // clamps at MAX_BLANK_RUN + 1
+        const uint32_t idx = (s.w - (gap + 1u - p)) & NB_MASK;
+        s.bufI[idx] = aI + stepI * (float)p;
+        s.bufQ[idx] = aQ + stepQ * (float)p;
       }
-      if (s.run > MAX_BLANK_RUN)
-      {
-        // too long for an impulse — it's a signal, track it
-        s.avg_amp += alpha * (amp - s.avg_amp);
-      }
-    }
-    else
-    {
-      if ((s.run > 0u) && (s.run <= MAX_BLANK_RUN))
-      {
-        // qualified impulse: rewrite the buffered event by linear
-        // interpolation between the last good sample before it and
-        // the current (below threshold) sample
-        uint32_t gap = s.run + GUARD_PRE;
-        if (gap > NB_LEN - 2u)
-        {
-          gap = NB_LEN - 2u;
-        }
-        const uint32_t ia = (s.w - gap - 1u) & NB_MASK;  // last good sample
-        const float aI  = s.bufI[ia];
-        const float aQ  = s.bufQ[ia];
-        const float stepI = (I - aI) / (float)(gap + 1u);
-        const float stepQ = (Q - aQ) / (float)(gap + 1u);
-        for (uint32_t p = 1u; p <= gap; p++)
-        {
-          const uint32_t idx = (s.w - (gap + 1u - p)) & NB_MASK;
-          s.bufI[idx] = aI + stepI * (float)p;
-          s.bufQ[idx] = aQ + stepQ * (float)p;
-        }
-      }
+    };
 
-      // track signal envelope
-      s.avg_amp += alpha * (amp - s.avg_amp);
-      s.run = 0u;
+    switch (s.state)
+    {
+      case NB_IDLE:
+      {
+        if (amp > on)
+        {
+          s.state = NB_EVENT;
+          s.run = 1u;
+          s.peak = amp;
+        }
+        else
+        {
+          s.avg_amp += alpha * (amp - s.avg_amp);
+        }
+        break;
+      }
+      case NB_EVENT:
+      {
+        if (amp > on)
+        {
+          if (amp > s.peak) s.peak = amp;
+          if (++s.run > MAX_BLANK_RUN)
+          {
+            s.state = NB_SIGNAL;             // too long for a pop
+          }
+        }
+        else
+        {
+          // pop over. A pop only just over the threshold (a noise peak or
+          // voice transient, most false triggers) is blanked exactly as
+          // before: GUARD_PRE + the samples over the threshold. A pop well
+          // over the threshold also gets 'extra' samples on BOTH sides, enough
+          // for its ringing to decay back down to the threshold.
+          const float over_db = 20.0f * log10f(s.peak / on);
+          uint32_t extra = 0u;
+          if (over_db > BIG_POP_DB)
+          {
+            extra = (uint32_t)((over_db - BIG_POP_DB) / RING_DB_PER_SAMPLE) + 1u;
+            if (extra > GUARD_EXTRA_MAX) extra = GUARD_EXTRA_MAX;
+          }
+          if (extra == 0u)
+          {
+            blank(GUARD_PRE + s.run);        // this sample is clean: blank now
+            s.avg_amp += alpha * (amp - s.avg_amp);
+            s.state = NB_IDLE;
+          }
+          else
+          {
+            s.extra = extra;
+            s.post = 1u;                     // this sample is the first trailing one
+            s.state = NB_POST;
+          }
+        }
+        break;
+      }
+      case NB_POST:
+      {
+        if (amp > on)
+        {
+          if (s.run + s.post + 1u <= MAX_BLANK_RUN)
+          {
+            // another pop inside the trailing guard: merge it
+            s.run += s.post + 1u;
+            s.post = 0u;
+            if (amp > s.peak) s.peak = amp;
+            s.state = NB_EVENT;
+          }
+          else
+          {
+            s.state = NB_SIGNAL;             // a dense train: treat as signal
+          }
+        }
+        else if (s.post < s.extra)
+        {
+          s.post++;                          // still inside the trailing guard
+        }
+        else
+        {
+          // this sample is clean: blank pre-guard + pop + trailing guard
+          blank(GUARD_PRE + s.extra + s.run + s.post);
+          s.avg_amp += alpha * (amp - s.avg_amp);
+          s.state = NB_IDLE;
+        }
+        break;
+      }
+      case NB_SIGNAL:
+      {
+        s.avg_amp += alpha * (amp - s.avg_amp);   // follow the signal
+        if (amp <= on)
+        {
+          s.state = NB_IDLE;
+        }
+        break;
+      }
     }
 
     // delay line: emit the sample from NB_LEN calls ago, store the current one
@@ -266,7 +369,7 @@ namespace DSP
     return agc(audio_out * 32768.0f);
   }
 
-  static const float __not_in_flash_func(process_ft8)(const int16_t in_i,const int16_t in_q)
+  static const float __not_in_flash_func(process_ft8)(const int16_t in_i,const int16_t in_q,float &ft8_audio)
   {
     // remove DC
     float ii = FILTER::dc1f((float)in_i / 32768.0f);
@@ -280,13 +383,10 @@ namespace DSP
     const float ssb = p45 - n45;
 
     // LPF
-    const float audio_out = FILTER::lpf_3000f_rx(ssb);
+    ft8_audio = FILTER::lpf_3000f_rx(ssb);
 
     // AGC for s-meter
-    agc(audio_out * 32768.0f);
-
-    // return raw float value
-    return audio_out;
+    return agc(ft8_audio * 32768.0f);
   }
 
   static const int16_t __not_in_flash_func(process_cw)(const int16_t in_i,const int16_t in_q,float &sig)

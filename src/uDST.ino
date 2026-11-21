@@ -1,5 +1,5 @@
 /*
- * uDST Version 4.1.250
+ * uDST Version 5.4.250
  *
  * Copyright 2026 Ian Mitchell VK7IAN
  * Licenced under the GNU GPL Version 3
@@ -65,6 +65,19 @@
  *  3.9.250 fix overflow warning
  *  4.0.250 update all-pass
  *  4.1.250 CW shaping improved
+ *  4.2.250 enforce build options
+ *  4.3.250 improve noise blanker
+ *  4.4.250 FT8 autocal progress
+ *  4.5.250 FT8 on Ham band only
+ *  4.6.250 FT8 autocal shows first attempt
+ *  4.7.250 iambic A and B keyer
+ *  4.8.250 FT8 monitoring
+ *  4.9.250 add error sprite
+ *  5.0.250 fix call entry message
+ *  5.1.250 fix CW sidetone
+ *  5.2.250 fix sidetone level
+ *  5.3.250 add narrow band FM
+ *  5.4.250 show TX level
  */
 
 //#define DEBUGGING_SKIP
@@ -88,6 +101,7 @@
 #include "Rotary.h"
 #include "spectrum.h"
 #include "dsp.h"
+#include "fm.h"
 #include "menu.h"
 #include "CW.h"
 #include "cwdecode1.h"
@@ -101,16 +115,34 @@
 #include "ArialBold16pt7b.h"
 #include "stackpaint.h"
 
+// catch build options where possible
+#ifndef ARDUINO_RASPBERRY_PI_PICO_2
+#error "Tools > Board must be set to 'Raspberry Pi Pico 2'"
+#endif
+#if !defined(__OPTIMIZE__) || defined(__OPTIMIZE_SIZE__) || defined(__NO_INLINE__)
+#error "Self-test 1: set Tools > Optimize to -O3 (core 1 timing depends on it)"
+#endif
+#if defined(F_CPU) && (F_CPU != 250000000L)
+#error "Self-test 1: set Tools > CPU Speed to 250 MHz"
+#endif
+#ifndef NO_USB
+#error "Tools > USB Stack must be set to 'No USB'"
+#endif
+#ifdef USE_TINYUSB
+#error "Tools > USB Stack must be set to 'No USB' (TinyUSB selected)"
+#endif
+
 // uncomment when dev/debugging
 //#define USER_CALL "VK7IAN"
 //#define USER_GRID "QE36"
 
-#define VERSION_STRING "  V4.1."
+#define VERSION_STRING "  V5.4."
 #define CW_TIMEOUT 800u
 #define MENU_TIMEOUT 5000u
 #define VOX_LEVEL 100u
 #define VOX_TIMEOUT 250u
 #define POPUP_TIMEOUT 5000u
+#define TX_LEVEL_POPUP_TIMEOUT 1500u
 #define BAND_80M 0
 #define BAND_40M 1
 #define BAND_30M 2
@@ -136,6 +168,7 @@
 #define NOTCH_LOW 300ul
 #define NOTCH_HIGH 2600ul
 #define DEFAULT_NOTCH 1000ul
+#define DEFAULT_SQUELCH 2ul
 #define BUTTON_LONG_PRESS_TIME 800ul
 #define SPECTRUM_LEVEL_MIN -4
 #define SPECTRUM_LEVEL_MAX 5
@@ -277,6 +310,7 @@ static_assert((MAX_ADC_SAMPLES & (MAX_ADC_SAMPLES - 1)) == 0, "MAX_ADC_SAMPLES m
 #define ERROR_LPF      5u
 #define ERROR_FWDADC   7u
 #define ERROR_REFADC   8u
+#define ERROR_SPRITE   9u
 
 enum ft8_call_t
 {
@@ -296,7 +330,8 @@ enum radio_mode_t
   MODE_DGL,
   MODE_DGU,
   MODE_FT8,
-  MODE_AM
+  MODE_AM,
+  MODE_FM
 };
 
 volatile static struct
@@ -317,6 +352,7 @@ volatile static struct
   uint32_t micproc;
   uint32_t bandwidth;
   uint32_t notch;
+  uint32_t squelch;
   radio_mode_t mode;
   ft8_call_t ft8_cq;
   bool tx_safe;
@@ -330,6 +366,8 @@ volatile static struct
   bool graph_swr;
   bool notch_enable;
   bool ft8_autocal;
+  bool ft8_monitor;
+  bool iambic_b;
   int8_t level[NUM_BANDS];
   int8_t slevel[NUM_BANDS];
   char callsign[16];
@@ -353,6 +391,7 @@ radio =
   DEFAULT_MICPROC,
   DEFAULT_BANDWIDTH,
   DEFAULT_NOTCH,
+  DEFAULT_SQUELCH,
   DEFAULT_MODE,
   FT8_CQ_CQ,
   false,
@@ -366,6 +405,8 @@ radio =
   false,
   false,
   true,
+  false,
+  false,
   {0,0,0,0,0,0,0,0,0},
   {0,0,0,0,0,0,0,0,0},
   "",
@@ -438,6 +479,9 @@ volatile static uint32_t audio_pwm = 0;
 volatile static uint32_t adc_sample_p = 0;
 volatile static uint32_t ft8_sample_p = 0;
 volatile static uint32_t mic_peak_level = 0;
+// TX level from core 1 to core 0 in one word (atomic)
+// bits 31..8 change count, bits 7..0 level (0 to 100%)
+volatile static uint32_t tx_level_report = 0;
 volatile static int16_t adc_data_i[MAX_ADC_SAMPLES] = {0};
 volatile static int16_t adc_data_q[MAX_ADC_SAMPLES] = {0};
 volatile static float ft8_data[FT8_FFT_SIZE] = {0.0f};
@@ -765,6 +809,8 @@ static void save_settings(void)
   EEPROM.put(i,radio.callsign);
   i += sizeof(radio.callsign);
   EEPROM.put(i,radio.grid);
+  i += sizeof(radio.grid);
+  EEPROM.put(i,(uint32_t)radio.iambic_b?1u:0u);
   EEPROM.end();
   unmute();
 }
@@ -802,6 +848,9 @@ static void restore_settings(void)
     EEPROM.get(i,radio.callsign);
     i += sizeof(radio.callsign);
     EEPROM.get(i,radio.grid);
+    i += sizeof(radio.grid);
+    EEPROM.get(i,data32);
+    radio.iambic_b = data32==1?true:false;
     radio.callsign[STATION_CALL_MAX] = '\0';
     radio.grid[STATION_GRID_LEN] = '\0';
   }
@@ -1044,7 +1093,24 @@ void setup(void)
   tft.setRotation(1);
   tft.fillScreen(LCD_BLACK);
   tft.displayOn();
-  lcd.createSprite(LCD_WIDTH, LCD_HEIGHT);
+  const uint32_t free_heap = rp2040.getFreeHeap();
+  if (lcd.createSprite(LCD_WIDTH, LCD_HEIGHT)==nullptr)
+  {
+    // not enough RAM for the display buffer
+    // report directly to the TFT, then stop
+    tft.setTextFont(1);
+    tft.setTextSize(2);
+    tft.setTextColor(LCD_WHITE,LCD_BLACK);
+    tft.setCursor(4,4);
+    tft.print("No RAM for display");
+    tft.setCursor(4,28);
+    tft.print("Free: ");
+    tft.print(free_heap);
+    tft.setCursor(4,52);
+    tft.print("Need: ");
+    tft.print((uint32_t)LCD_WIDTH*LCD_HEIGHT*2u);
+    error_stop(ERROR_SPRITE);
+  }
   lcd.fillSprite(LCD_BLACK);
   lcd.pushSprite(0,0);
   for (uint32_t i=0;i<32;i++)
@@ -1460,6 +1526,7 @@ static void show_mode(void)
       case MODE_DGL: sz_mode = "DGL"; break;
       case MODE_DGU: sz_mode = "DGU"; break;
       case MODE_FT8: sz_mode = "FT8"; break;
+      case MODE_FM:  sz_mode = "FM";  break;
     }
   }
   else
@@ -1474,6 +1541,7 @@ static void show_mode(void)
       case MODE_DGU: sz_mode = "DGU"; break;
       case MODE_FT8: sz_mode = "FT8"; break;
       case MODE_AM:  sz_mode = "AM";  break;
+      case MODE_FM:  sz_mode = "FM";  break;
     }
   }
   lcd.print(sz_mode);
@@ -1582,9 +1650,9 @@ static void show_jnr(void)
   {
     return;
   }
-  if (radio.mode==MODE_DGU || radio.mode==MODE_DGL || radio.mode==MODE_FT8)
+  if (radio.mode==MODE_DGU || radio.mode==MODE_DGL || radio.mode==MODE_FT8 || radio.mode==MODE_FM)
   {
-    // no JNR for digital modes
+    // no JNR for digital modes or FM
     return;
   }
   lcd.fillRect(POS_JNR_X-5,POS_JNR_Y-1,45,10,LCD_PURPLE);
@@ -1733,6 +1801,24 @@ static void show_cessb_settings(void)
       lcd.print(" CESSB:Off");
       lcd.print(" NB:Off");
     }
+    else if (radio.mode==MODE_FM)
+    {
+      lcd.setTextSize(1);
+      lcd.setTextColor(LCD_GREEN);
+      lcd.setCursor(POS_CESSB_MIC_X,POS_CESSB_MIC_Y);
+      lcd.print("Dev:2.5k");
+      lcd.setCursor(POS_CESSB_MIC_X+58,POS_CESSB_MIC_Y);
+      lcd.print("Mic:");
+      lcd.print(radio.micgain);
+      lcd.print("%");
+      lcd.setCursor(POS_CESSB_MIC_X+110,POS_CESSB_MIC_Y);
+      lcd.print("BW:12kHz");
+      lcd.setCursor(POS_CESSB_MIC_X+168,POS_CESSB_MIC_Y);
+      lcd.print("SQ");
+      lcd.print(radio.squelch);
+      // squelch open indicator
+      lcd.print(NFM::squelch_open?"*":" ");
+    }
     else if (radio.mode==MODE_LSB || radio.mode==MODE_USB)
     {
       lcd.setTextSize(1);
@@ -1820,6 +1906,16 @@ static void show_spectrum(void)
   {
     switch (radio.mode)
     {
+      case MODE_FM:
+      {
+        // TX is centred on the dial frequency
+        for (uint32_t x=0;x<45;x++)
+        {
+          lcd.drawLine(POS_CENTER_LEFT-x,POS_WATER_Y,POS_CENTER_LEFT-x,POS_WATER_Y+31,LCD_MODE);
+          lcd.drawLine(POS_CENTER_RIGHT+x,POS_WATER_Y,POS_CENTER_RIGHT+x,POS_WATER_Y+31,LCD_MODE);
+        }
+        break;
+      }
       case MODE_LSB:
       {
         for (uint32_t x=0;x<SSB_WIDTH;x++)
@@ -1943,6 +2039,16 @@ static void show_spectrum(void)
       {
         for (uint32_t x=0;x<10;x++)
         {
+          lcd.drawLine(POS_CENTER_RIGHT+x,POS_WATER_Y,POS_CENTER_RIGHT+x,POS_WATER_Y+31,LCD_MODE);
+        }
+        break;
+      }
+      case MODE_FM:
+      {
+        // RX is also centred on the dial frequency
+        for (uint32_t x=0;x<45;x++)
+        {
+          lcd.drawLine(POS_CENTER_LEFT-x,POS_WATER_Y,POS_CENTER_LEFT-x,POS_WATER_Y+31,LCD_MODE);
           lcd.drawLine(POS_CENTER_RIGHT+x,POS_WATER_Y,POS_CENTER_RIGHT+x,POS_WATER_Y+31,LCD_MODE);
         }
         break;
@@ -2090,8 +2196,8 @@ static void show_menu(void)
         {
           char sz_option_name[16] = "";
           memset(sz_option_name,' ',sizeof(sz_option_name));
-          sz_option_name[10] = '\0';
-          for (int k=1;k<10;k++)
+          sz_option_name[12] = '\0';
+          for (int k=1;k<12;k++)
           {
             const char c = menu_options[menu_current].options[i].option_name[k-1];
             if (c=='\0') break;
@@ -2119,7 +2225,7 @@ static char sz_popup[64] = "";
 static char sz_popup_heading[64] = "";
 static uint32_t popup_timeout = 0;
 
-static void set_popup(const char *sz_message,const char *sz_heading = NULL)
+static void set_popup(const char *sz_message,const char *sz_heading = NULL,const uint32_t timeout = POPUP_TIMEOUT)
 {
   if (sz_message)
   {
@@ -2134,13 +2240,28 @@ static void set_popup(const char *sz_message,const char *sz_heading = NULL)
     {
       strcpy(sz_popup_heading,"ATTENTION:");
     }
-    popup_timeout = millis() + POPUP_TIMEOUT;
+    popup_timeout = millis() + timeout;
   }
 }
 
 static void set_popup(volatile char *sz_message,const char *sz_heading = NULL)
 {
   set_popup((const char*)sz_message,sz_heading);
+}
+
+static void show_tx_level(void)
+{
+  // core 1 changes the TX level, core 0 shows it
+  static uint32_t last_report = 0;
+  const uint32_t report = tx_level_report;
+  if (report == last_report)
+  {
+    return;
+  }
+  last_report = report;
+  char sz_level[32] = "";
+  snprintf(sz_level,sizeof(sz_level),"TX Level: %lu%%",report & 0xffu);
+  set_popup(sz_level,"TX INFO:",TX_LEVEL_POPUP_TIMEOUT);
 }
 
 static void show_popup(void)
@@ -2187,6 +2308,7 @@ static void update_display(const uint32_t signal_level = 0u)
   show_overflow();
   show_cw_decode();
   show_menu();
+  show_tx_level();
   show_popup();
   show_debug_value(debug_value_1,debug_value_2);
   display_refresh();
@@ -2382,6 +2504,7 @@ void __not_in_flash_func(loop1)(void)
         case MODE_USB: DSP::process_mic(adc_value,tx_i,tx_q,mic_gain,radio.micproc,radio.cessb); break;
         case MODE_DGL: DSP::process_dig(adc_value,tx_q,tx_i);                                    break;
         case MODE_DGU: DSP::process_dig(adc_value,tx_i,tx_q);                                    break;
+        case MODE_FM:  NFM::process_tx(adc_value,tx_i,tx_q,mic_gain);                            break;
         case MODE_CWL: CW::process_cw(radio.keydown,tx_i,tx_q);                                  break;
         case MODE_CWU: CW::process_cw(radio.keydown,tx_i,tx_q);                                  break;
         case MODE_FT8: tx_i = tx_q = FT8_TX_MAX;                                                 break;
@@ -2394,8 +2517,11 @@ void __not_in_flash_func(loop1)(void)
       adc_data_i[adc_sample_p] = tx_i<<5;
       adc_data_q[adc_sample_p] = tx_q<<5;
       adc_sample_p = (adc_sample_p+1) & (MAX_ADC_SAMPLES-1);
-      if (radio.mode==MODE_LSB || radio.mode==MODE_USB ||
-        radio.mode==MODE_DGL || radio.mode==MODE_DGU)
+      if (radio.mode==MODE_LSB ||
+        radio.mode==MODE_USB ||
+        radio.mode==MODE_DGL ||
+        radio.mode==MODE_DGU ||
+        radio.mode==MODE_FM)
       {
         if (millis()>tx_peak_delay)
         {
@@ -2409,7 +2535,7 @@ void __not_in_flash_func(loop1)(void)
       else if (radio.mode==MODE_CWL || radio.mode==MODE_CWU)
       {
         // generate the sidetone
-        int32_t dac_audio = CW::sidetone(radio.keydown);
+        int32_t dac_audio = CW::sidetone(radio.keydown,radio.cw_phase,radio.cw_level);
         dac_audio = constrain(dac_audio,-2048l,+2047l);
         dac_audio += 2048l;
         dac_h = dac_audio >> 6;
@@ -2434,6 +2560,10 @@ void __not_in_flash_func(loop1)(void)
             rotary = 0;
             mutex_exit(&rotary_mutex);
             tx_level = constrain(tx_level,0.0f,100.0f);
+            // tell core 0, new count and level in one write
+            // reported even at a limit so 0% or 100% shows
+            const uint32_t count = (tx_level_report & 0xffffff00u) + 0x100u;
+            tx_level_report = count | (uint32_t)tx_level;
           }
         }
       }
@@ -2545,6 +2675,7 @@ void __not_in_flash_func(loop1)(void)
       const uint8_t jnr = radio.jnrlevel;
       const uint8_t nb = radio.nblevel;
       const uint8_t bw = radio.bandwidth - 1;
+      const uint32_t sqelch = radio.squelch;
       switch (radio.mode)
       {
         case MODE_LSB: dac_audio = DSP::process_ssb(qq,ii,jnr,bw,nb); break;
@@ -2554,11 +2685,12 @@ void __not_in_flash_func(loop1)(void)
         case MODE_CWU: dac_audio = DSP::process_cw(ii,qq,cwsig);      break;
         case MODE_DGL: dac_audio = DSP::process_dig(qq,ii);           break;
         case MODE_DGU: dac_audio = DSP::process_dig(ii,qq);           break;
-        case MODE_FT8: ft8_audio = DSP::process_ft8(ii,qq);           break;
+        case MODE_FT8: dac_audio = DSP::process_ft8(ii,qq,ft8_audio); break;
+        case MODE_FM:  dac_audio = NFM::process_rx(ii,qq,sqelch);     break;
       }
       if (radio.mode==MODE_FT8)
       {
-        dac_audio = 2048l;
+        dac_audio = radio.ft8_monitor?dac_audio:0;
         volatile static struct {uint32_t c : 2; } downsample = { 0 };
         if (downsample.c == 0)
         {
@@ -2568,11 +2700,8 @@ void __not_in_flash_func(loop1)(void)
         }
         downsample.c++;
       }
-      else
-      {
-        dac_audio = constrain(dac_audio,-2048l,+2047l);
-        dac_audio += 2048l;
-      }
+      dac_audio = constrain(dac_audio,-2048l,+2047l);
+      dac_audio += 2048l;
       dac_h = dac_audio >> 6;
       dac_l = dac_audio & 0x3f;
       if (radio.cwdecode != 0)
@@ -2735,6 +2864,85 @@ static void process_vox_tx(void)
   }
 }
 
+////
+////
+
+// ---------------------------------------------------------------------------
+// Iambic keyer paddle tracking
+//
+// While one element (and the space after it) is being sent the other paddle
+// is watched, and remembered in dit_latched / dah_latched:
+//
+//   iambic B: remembered if the paddle is closed at any time, so releasing
+//             a squeeze sends one more (opposite) element
+//   iambic A: remembered only if the paddle is newly pressed, so releasing
+//             a squeeze finishes the current element and stops, but a tap
+//             on the other paddle is still not missed
+//
+// A new press needs the paddle to have been open for CW_PADDLE_DEBOUNCE ms,
+// otherwise contact bounce on release looks like a new press in iambic A.
+// ---------------------------------------------------------------------------
+#define CW_PADDLE_DEBOUNCE 5ul
+
+struct cw_paddle_t
+{
+  uint8_t pin;
+  bool closed;     // contact closed at the last poll
+  bool down;       // debounced paddle state
+  bool pressed;    // new press seen at the last poll
+  bool opening;    // contact open, waiting for debounce
+  uint32_t opened; // when the contact was first seen open
+
+  void reset(void)
+  {
+    closed = false;
+    down = false;
+    pressed = false;
+    opening = false;
+    opened = 0;
+  }
+
+  void poll(void)
+  {
+    pressed = false;
+    closed = (digitalRead(pin)==LOW);
+    if (closed)
+    {
+      opening = false;
+      if (!down)
+      {
+        down = true;
+        pressed = true;
+      }
+      return;
+    }
+    if (!down)
+    {
+      return;
+    }
+    const uint32_t now = millis();
+    if (!opening)
+    {
+      opening = true;
+      opened = now;
+    }
+    else if (now-opened>=CW_PADDLE_DEBOUNCE)
+    {
+      down = false;
+      opening = false;
+    }
+  }
+
+  // remember this paddle while the other element is being sent?
+  bool remember(void) const
+  {
+    return radio.iambic_b?closed:pressed;
+  }
+};
+
+static cw_paddle_t dit_paddle = {PIN_PADA,false,false,false,false,0u};
+static cw_paddle_t dah_paddle = {PIN_PADB,false,false,false,false,0u};
+
 static void cw_dit_delay(const uint32_t ms,const uint32_t level)
 {
   const uint32_t delay_time = millis()+ms;
@@ -2742,7 +2950,9 @@ static void cw_dit_delay(const uint32_t ms,const uint32_t level)
   while (delay_time>millis())
   {
     // check for dah
-    if (digitalRead(PIN_PADB)==LOW)
+    dit_paddle.poll();
+    dah_paddle.poll();
+    if (dah_paddle.remember())
     {
       dah_latched = true;
     }
@@ -2756,9 +2966,32 @@ static void cw_dah_delay(const uint32_t ms,const uint32_t level)
   while (delay_time>millis())
   {
     // check for dit
-    if (digitalRead(PIN_PADA)==LOW)
+    dit_paddle.poll();
+    dah_paddle.poll();
+    if (dit_paddle.remember())
     {
       dit_latched = true;
+    }
+  }
+}
+
+// time for the PA to start up before the first element is keyed
+// either paddle closing during this time is remembered
+static void cw_tx_delay(const uint32_t ms)
+{
+  const uint32_t delay_time = millis()+ms;
+  update_display(0u);
+  while (delay_time>millis())
+  {
+    dit_paddle.poll();
+    dah_paddle.poll();
+    if (dit_paddle.closed)
+    {
+      dit_latched = true;
+    }
+    if (dah_paddle.closed)
+    {
+      dah_latched = true;
     }
   }
 }
@@ -2779,6 +3012,19 @@ static void process_key(void)
 
   // clear spectrum
   memset(magnitude,0,sizeof(magnitude));
+
+  // the paddles are not tracked in receive
+  dit_paddle.reset();
+  dah_paddle.reset();
+
+  // did the dah paddle start TX?
+  bool dah_first = dah_latched && !dit_latched;
+
+  if (dit_latched || dah_latched)
+  {
+    // PA start up time before the first element (one dit, as V8.4)
+    cw_tx_delay(radio.cw_dit);
+  }
 
   // stay here until timeout after key up (PTT released)
   uint32_t cw_timeout = millis() + CW_TIMEOUT;
@@ -2802,11 +3048,15 @@ static void process_key(void)
       update_display(0u);
       cw_timeout = millis() + CW_TIMEOUT;
     }
-    if (digitalRead(PIN_PADA)==LOW || dit_latched)
+    // keep the paddle tracking up to date
+    dit_paddle.poll();
+    dah_paddle.poll();
+
+    // if the dah paddle started TX the dah goes first
+    if (!dah_first && (dit_latched || digitalRead(PIN_PADA)==LOW))
     {
-      // dit
+      // dit then the space after it
       dit_latched = false;
-      cw_dit_delay(radio.cw_dit,0u);
       radio.keydown = true;
       magnitude[512] = spectrum_display_level;
       digitalWrite(LED_BUILTIN,HIGH);
@@ -2814,13 +3064,13 @@ static void process_key(void)
       radio.keydown = false;
       magnitude[512] = 0u;
       digitalWrite(LED_BUILTIN,LOW);
+      cw_dit_delay(radio.cw_dit,0u);
       cw_timeout = millis() + CW_TIMEOUT;
     }
     if (digitalRead(PIN_PADB)==LOW || dah_latched)
     {
-      // dah
+      // dah then the space after it
       dah_latched = false;
-      cw_dah_delay(radio.cw_dit,0u);
       radio.keydown = true;
       magnitude[512] = spectrum_display_level;
       digitalWrite(LED_BUILTIN,HIGH);
@@ -2828,8 +3078,10 @@ static void process_key(void)
       radio.keydown = false;
       magnitude[512] = 0u;
       digitalWrite(LED_BUILTIN,LOW);
+      cw_dah_delay(radio.cw_dit,0u);
       cw_timeout = millis() + CW_TIMEOUT;
     }
+    dah_first = false;
     if (millis()>cw_timeout)
     {
       break;
@@ -3853,7 +4105,12 @@ static void ft8_disable_tx(void)
   set_frequency();
   delay(10);
   digitalWrite(LED_BUILTIN, LOW);
-  unmute();
+
+  // only unmute if monitoring audio
+  if (radio.ft8_monitor)
+  {
+    unmute();
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -4330,6 +4587,14 @@ static bool ft8_qso_detect_poach(
   return true;
 }
 
+// Show the autocal attempt that is about to be listened to
+static void ft8_cal_show_try(void)
+{
+  char buf[24] = "";
+  snprintf(buf, sizeof(buf), "Searching %lu/%u", ft8_cal_try + 1ul, FT8_CAL_MAX_TRIES);
+  ft8_set_popup(buf,"FT8 AUTOCAL:");
+}
+
 // Call once per slot from the end of FT8_STATE_DECODING.
 // Updates slot_calibrate_ms in place.
 static const ft8_cal_result_t ft8_auto_calibrate(
@@ -4372,13 +4637,13 @@ static const ft8_cal_result_t ft8_auto_calibrate(
   }
   if (++ft8_cal_try >= FT8_CAL_MAX_TRIES)
   {
-    ft8_set_popup("No signals found","FT8 AUTOCAL:");
+    // caller exits FT8, so use the main popup
+    set_popup("No signals found","FT8 AUTOCAL:");
     return FT8_CAL_NOSIGNAL;
   }
 
   cal_ms += FT8_CAL_STEP_MS;
-  snprintf(buf, sizeof(buf), "Searching %lu/%u", ft8_cal_try + 1ul, FT8_CAL_MAX_TRIES);
-  ft8_set_popup(buf,"FT8 AUTOCAL:");
+  ft8_cal_show_try();
   return FT8_CAL_WORKING;
 }
 
@@ -4410,6 +4675,7 @@ static void ft8_init(void)
   ft8_exit_pending_until = 0;
   ft8_button_deferred = FT8_BTN_IDLE;
   ft8_button_down_time = 0;
+  ft8_cal_try = 0;
 }
 
 //------------------------------------------------------------------------------
@@ -4433,10 +4699,28 @@ static const bool do_ft8(const bool cal_reset = false)
   }
 
   // reset calibration
+  // caller sets radio.ft8_autocal first
   if (cal_reset)
   {
     slot_calibrate_ms = 0;
-    set_popup("Calibration Reset","FT8 INFO:");
+    ft8_cal_try = 0;
+    set_popup(radio.ft8_autocal?"Auto cal enabled":"Calibration Reset","FT8 INFO:");
+    return false;
+  }
+
+  // check Ham frequency
+  bool ham_band = false;
+  for (int i=0;i<8;i++)
+  {
+    if (radio.frequency >= bands[i].lo && radio.frequency <= bands[i].hi)
+    {
+      ham_band = true;
+      break;
+    }
+  }
+  if (!ham_band)
+  {
+    set_popup("Choose Ham Band","FT8 ERROR:");
     return false;
   }
 
@@ -4450,14 +4734,19 @@ static const bool do_ft8(const bool cal_reset = false)
     {
       // arbitrary phase
       // auto will fix it
+      // always start from the first try
       slot_calibrate_ms = millis();
+      ft8_cal_try = 0;
+      ft8_cal_show_try();
     }
     else
     {
       delay(50);
       // wait for release
       while (digitalRead(PIN_ENCBUT) == LOW)
+      {
         delay(50);
+      }
 
       uint32_t cal_progress = 0;
       uint32_t disp_update  = 0;
@@ -4478,7 +4767,9 @@ static const bool do_ft8(const bool cal_reset = false)
       delay(50);
       // wait for release
       while (digitalRead(PIN_ENCBUT) == LOW)
+      {
         delay(50);
+      }
     }
   }
 
@@ -4628,9 +4919,22 @@ static const bool do_ft8(const bool cal_reset = false)
       ft8_history_add(ft8_lines, n, even_slot, (uint8_t)slot_num);
       if (radio.ft8_autocal)
       {
-        if (ft8_auto_calibrate(n, ft8_lines, slot_calibrate_ms) != FT8_CAL_WORKING)
+        const ft8_cal_result_t cal = ft8_auto_calibrate(n, ft8_lines, slot_calibrate_ms);
+        if (cal == FT8_CAL_DONE)
         {
           radio.ft8_autocal = false;
+        }
+        else if (cal == FT8_CAL_NOSIGNAL)
+        {
+          // no signals: exit FT8 but stay in
+          // autocal so next entry starts at try 1
+          slot_calibrate_ms = 0;
+          progress = 0;
+          ft8_monitor_reset(&ft8mon);
+          ft8_init();
+          ft8_hashtable_init();
+          ft8_state = FT8_STATE_WAITING;
+          return false;
         }
       }
       if (ft8_qso.active) ft8_qso_check_rx(ft8_lines, n);
@@ -4798,7 +5102,13 @@ static const bool do_ft8(const bool cal_reset = false)
       {
         // Confirmed
         progress = 0;
+        if (radio.ft8_autocal)
+        {
+          // not locked yet, restart search next time
+          slot_calibrate_ms = 0;
+        }
         ft8_init();
+        ft8_hashtable_init();
         ft8_state = FT8_STATE_WAITING;
         return false;
       }
@@ -4973,6 +5283,8 @@ void loop(void)
   static bool old_attenuator = radio.attenuator;
   static bool old_notch_enable = radio.notch_enable;
   static bool old_ft8_autocal = radio.ft8_autocal;
+  static bool old_ft8_monitor = radio.ft8_monitor;
+  static bool old_iambic_b = radio.iambic_b;
   static mode_t old_mode = radio.mode;
 
   // process button press
@@ -4999,6 +5311,7 @@ void loop(void)
         case OPTION_MODE_DGU:        radio.mode = MODE_DGU; radio.mode_auto = false; break;
         case OPTION_MODE_FT8:        radio.mode = MODE_FT8; radio.mode_auto = false; break;
         case OPTION_MODE_AM:         radio.mode = MODE_AM;  radio.mode_auto = false; break;
+        case OPTION_MODE_FM:         radio.mode = MODE_FM;  radio.mode_auto = false; break;
         case OPTION_MODE_AUTO:       radio.mode_auto = true;                         break;
         case OPTION_STEP_10:         radio.step = 10U;                               break;
         case OPTION_STEP_100:        radio.step = 100U;                              break;
@@ -5039,6 +5352,8 @@ void loop(void)
         case OPTION_CW_SPEED_20:     radio.cw_dit = 60u;                             break;
         case OPTION_CW_SPEED_25:     radio.cw_dit = 48u;                             break;
         case OPTION_CW_SPEED_30:     radio.cw_dit = 40u;                             break;
+        case OPTION_IAMBIC_A:        radio.iambic_b = false;                         break;
+        case OPTION_IAMBIC_B:        radio.iambic_b = true;                          break;
         case OPTION_DECODE_ADAPTIVE: radio.cwdecode = 1;                             break;
         case OPTION_DECODE_SCHMITT:  radio.cwdecode = 2;                             break;
         case OPTION_CWDECODE_OFF:    radio.cwdecode = 0;                             break;
@@ -5056,6 +5371,12 @@ void loop(void)
         case OPTION_NB_LEVEL4:       radio.nblevel = NB_LEVEL4;                      break;
         case OPTION_NB_LEVEL5:       radio.nblevel = NB_LEVEL5;                      break;
         case OPTION_NB_OFF:          radio.nblevel = NB_OFF;                         break;
+        case OPTION_SQL_OFF:         radio.squelch = 0;                              break;
+        case OPTION_SQL_LEVEL1:      radio.squelch = 1;                              break;
+        case OPTION_SQL_LEVEL2:      radio.squelch = 2;                              break;
+        case OPTION_SQL_LEVEL3:      radio.squelch = 3;                              break;
+        case OPTION_SQL_LEVEL4:      radio.squelch = 4;                              break;
+        case OPTION_SQL_LEVEL5:      radio.squelch = 5;                              break;
         case OPTION_MIC_25:          radio.micgain = 25;                             break;
         case OPTION_MIC_50:          radio.micgain = 50;                             break;
         case OPTION_MIC_75:          radio.micgain = 75;                             break;
@@ -5081,8 +5402,10 @@ void loop(void)
         case OPTION_FT8_CQ_WWFF:     radio.ft8_cq = FT8_CQ_WWFF;                     break;
         case OPTION_FT8_CQ_POTA:     radio.ft8_cq = FT8_CQ_POTA;                     break;
         case OPTION_FT8_CQ_SOTA:     radio.ft8_cq = FT8_CQ_SOTA;                     break;
-        case OPTION_FT8_CALSET:      do_ft8(true);                                   break;
-        case OPTION_FT8_AUTOCAL:     radio.ft8_autocal = true;                       break;
+        case OPTION_FT8_CALSET:      radio.ft8_autocal = false; do_ft8(true);        break;
+        case OPTION_FT8_AUTOCAL:     radio.ft8_autocal = true;  do_ft8(true);        break;
+        case OPTION_FT8_MONITOR_ON:  radio.ft8_monitor = true;                       break;
+        case OPTION_FT8_MONITOR_OFF: radio.ft8_monitor = false;                      break;
         case OPTION_CALL_RESET:      reset_callsign();                               break;
         case OPTION_CALL_REBOOT:     reboot_callsign();                              break;
         case OPTION_VERSION:         set_popup(sz_version,"VERSION:");               break;
@@ -5195,6 +5518,14 @@ void loop(void)
         set_popup(radio.graph_swr?"Graph SWR":"Numeric SWR");
       }
 
+      // iambic keyer mode
+      if (radio.iambic_b != old_iambic_b)
+      {
+        old_iambic_b = radio.iambic_b;
+        settings_changed = true;
+        set_popup(radio.iambic_b?"Iambic B":"Iambic A","CW KEYER:");
+      }
+
       // FT8 auto cal
       if (radio.ft8_autocal != old_ft8_autocal)
       {
@@ -5203,6 +5534,13 @@ void loop(void)
         {
           set_popup("Auto cal enabled","FT8 INFO:");
         }
+      }
+
+      // FT8 monitor audio
+      if (radio.ft8_monitor != old_ft8_monitor)
+      {
+        old_ft8_monitor = radio.ft8_monitor;
+        set_popup(radio.ft8_monitor?"Monitor On":"Monitor Off","FT8 INFO:");
       }
 
       // save the settings

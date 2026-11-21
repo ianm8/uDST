@@ -32,8 +32,8 @@
 
 */
 
-#define NUM_MENU_ITEMS 21U
-#define NUM_MENU_OPTIONS 10U
+#define NUM_MENU_ITEMS 23U
+#define NUM_MENU_OPTIONS 11U
 
 enum menu_top_t
 {
@@ -42,8 +42,10 @@ enum menu_top_t
   MENU_MODE,
   MENU_BANDWIDTH,
   MENU_NOTCH,
+  MENU_SQUELCH,
   MENU_CW_SPEED,
   MENU_CW_DECODE,
+  MENU_CW_KEYER,
   MENU_SIDETONE,
   MENU_SIDETONE_LEVEL,
   MENU_SPECTRUM_TYPE,
@@ -77,6 +79,7 @@ enum option_value_t
   OPTION_MODE_DGU,
   OPTION_MODE_FT8,
   OPTION_MODE_AM,
+  OPTION_MODE_FM,
   OPTION_MODE_AUTO,
   OPTION_BAND_80M,
   OPTION_BAND_40M,
@@ -101,6 +104,8 @@ enum option_value_t
   OPTION_CW_SPEED_20,
   OPTION_CW_SPEED_25,
   OPTION_CW_SPEED_30,
+  OPTION_IAMBIC_A,
+  OPTION_IAMBIC_B,
   OPTION_DECODE_ADAPTIVE,
   OPTION_DECODE_SCHMITT,
   OPTION_CWDECODE_OFF,
@@ -129,6 +134,12 @@ enum option_value_t
   OPTION_NB_LEVEL3,
   OPTION_NB_LEVEL4,
   OPTION_NB_LEVEL5,
+  OPTION_SQL_OFF,
+  OPTION_SQL_LEVEL1,
+  OPTION_SQL_LEVEL2,
+  OPTION_SQL_LEVEL3,
+  OPTION_SQL_LEVEL4,
+  OPTION_SQL_LEVEL5,
   OPTION_MIC_25,
   OPTION_MIC_50,
   OPTION_MIC_75,
@@ -154,6 +165,8 @@ enum option_value_t
   OPTION_FT8_CQ_SOTA,
   OPTION_FT8_CALSET,
   OPTION_FT8_AUTOCAL,
+  OPTION_FT8_MONITOR_ON,
+  OPTION_FT8_MONITOR_OFF,
   OPTION_CALL_RESET,
   OPTION_CALL_REBOOT,
   OPTION_VERSION,
@@ -192,13 +205,14 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_BAND_12M,"12M"},
       {OPTION_BAND_10M,"10M"},
       {OPTION_BAND_SWL,"SWL"},
-      {OPTION_EXIT,"Exit"}
+      {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"}
     }
   },
   {
     MENU_MODE,
     "Mode",
-    10U,
+    11U,
     {
       {OPTION_MODE_AUTO,"AUTO"},
       {OPTION_MODE_LSB,"LSB"},
@@ -209,6 +223,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_MODE_DGU,"DGU"},
       {OPTION_MODE_FT8,"FT8"},
       {OPTION_MODE_AM,"AM"},
+      {OPTION_MODE_FM,"FM"},
       {OPTION_EXIT,"Exit"}
     }
   },
@@ -226,6 +241,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_STEP_100000,"100000"},
       {OPTION_EXIT,"Exit"},
       {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
@@ -239,6 +255,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_JNR_LEVEL3,"Level 3"},
       {OPTION_JNR_OFF,"Off"},
       {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
@@ -260,6 +277,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_EXIT,"Exit"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
@@ -277,6 +295,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
@@ -288,6 +307,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_NOTCH_ON,"Notch On"},
       {OPTION_NOTCH_OFF,"Notch Off"},
       {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
@@ -311,13 +331,14 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
   {
     MENU_FT8,
     "FT8 Options",
-    8U,
+    10U,
     {
       {OPTION_FT8_CQ_CQ,"CQ"},
       {OPTION_FT8_CQ_DX,"CQ DX"},
@@ -326,8 +347,9 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_FT8_CQ_SOTA,"CQ SOTA"},
       {OPTION_FT8_CALSET,"Reset Cal"},
       {OPTION_FT8_AUTOCAL,"Auto Cal"},
+      {OPTION_FT8_MONITOR_ON,"Monitor On"},
+      {OPTION_FT8_MONITOR_OFF,"Monitor Off"},
       {OPTION_EXIT,"Exit"},
-      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
@@ -342,6 +364,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_CW_SPEED_25,"25 WPM"},
       {OPTION_CW_SPEED_30,"30 WPM"},
       {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
@@ -362,6 +385,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_SIDETONE_800,"800 Hz"},
       {OPTION_SIDETONE_850,"850 Hz"},
       {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
@@ -374,6 +398,25 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_SIDETONE_MED,"Medium"},
       {OPTION_SIDETONE_HI,"High"},
       {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"}
+    }
+  },
+  {
+    MENU_CW_KEYER,
+    "CW Keyer",
+    3U,
+    {
+      {OPTION_IAMBIC_A,"Iambic A"},
+      {OPTION_IAMBIC_B,"Iambic B"},
+      {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
@@ -396,6 +439,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
@@ -413,6 +457,8 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_MIC_175,"Gain 175%"},
       {OPTION_MIC_200,"Gain 200%"},
       {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"}
     }
   },
   {
@@ -429,6 +475,25 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_EXIT,"Exit"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"}
+    }
+  },
+  {
+    MENU_SQUELCH,
+    "FM Squelch",
+    7U,
+    {
+      {OPTION_SQL_LEVEL1,"Level 1"},
+      {OPTION_SQL_LEVEL2,"Level 2"},
+      {OPTION_SQL_LEVEL3,"Level 3"},
+      {OPTION_SQL_LEVEL4,"Level 4"},
+      {OPTION_SQL_LEVEL5,"Level 5"},
+      {OPTION_SQL_OFF,"Off"},
+      {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
@@ -440,6 +505,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_GRAPH_SWR_Y,"Yes"},
       {OPTION_GRAPH_SWR_N,"No"},
       {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
@@ -463,6 +529,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
@@ -474,6 +541,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_ATTENUATOR_ON,"On"},
       {OPTION_ATTENUATOR_OFF,"Off"},
       {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
@@ -497,6 +565,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
@@ -514,6 +583,7 @@ menu_options[NUM_MENU_ITEMS] =
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"}
     }
   },
@@ -523,6 +593,7 @@ menu_options[NUM_MENU_ITEMS] =
     1U,
     {
       {OPTION_EXIT,"Exit"},
+      {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
       {OPTION_NONE,"None"},
