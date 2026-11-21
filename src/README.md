@@ -58,3 +58,16 @@ https://github.com/earlephilhower/arduino-pico
  * 3.9.250 fix overflow warning
  * 4.0.250 update all-pass
  * 4.1.250 CW shaping improved
+ * 4.2.250 enforce build options
+ * 4.3.250 improve noise blanker
+ * 4.4.250 FT8 autocal progress
+ * 4.5.250 FT8 on Ham band only
+ * 4.6.250 FT8 autocal shows first attempt
+ * 4.7.250 iambic A and B keyer
+ * 4.8.250 FT8 monitoring
+ * 4.9.250 add error sprite
+ * 5.0.250 fix call entry message
+ * 5.1.250 fix CW sidetone
+ * 5.2.250 fix sidetone level
+ * 5.3.250 add narrow band FM
+ * 5.4.250 show TX level
